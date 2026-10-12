@@ -6,6 +6,7 @@ param(
     [string]$ResumeCheckpoint
 )
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/ProcessTree.ps1"
 $exePath = (Resolve-Path -LiteralPath $Executable).Path
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath (Join-Path $outputPath 'phase.json')) { throw 'Use a fresh output directory for each run.' }
@@ -23,7 +24,7 @@ $app = Start-Process -FilePath $exePath -PassThru -WindowStyle Hidden
 Remove-Item Env:MEDIABROWSER_BENCH_DIR, Env:MEDIABROWSER_BENCH_URL, Env:MEDIABROWSER_BENCH_SECONDS
 Remove-Item Env:MEDIABROWSER_BENCH_RESUME -ErrorAction SilentlyContinue
 $known = @{}
-$known[[uint32]$app.Id] = $app.StartTime.ToUniversalTime()
+$known[[uint32]$app.Id] = @{ Created = $app.StartTime.ToUniversalTime(); EndedAt = $null }
 $samples = [Collections.Generic.List[object]]::new()
 $processRows = [Collections.Generic.List[object]]::new()
 $clock = [Diagnostics.Stopwatch]::StartNew()
@@ -31,20 +32,7 @@ $lastPhase = ''
 $rootExited = $null
 while ($clock.Elapsed.TotalSeconds -lt 600) {
     $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CreationDate, PrivatePageCount, ThreadCount)
-    # Remember discovered descendants after their parents exit, and reject PID
-    # reuse by checking creation times. Never sum unrelated WebView2 instances.
-    do {
-        $added = $false
-        foreach ($proc in $all) {
-            $id = [uint32]$proc.ProcessId
-            $parent = [uint32]$proc.ParentProcessId
-            if (!$known.ContainsKey($id) -and $known.ContainsKey($parent) -and $proc.CreationDate.ToUniversalTime() -ge $known[$parent]) {
-                $known[$id] = $proc.CreationDate.ToUniversalTime()
-                $added = $true
-            }
-        }
-    } while ($added)
-    $tree = @($all | Where-Object { $known.ContainsKey([uint32]$_.ProcessId) -and [Math]::Abs(($_.CreationDate.ToUniversalTime() - $known[[uint32]$_.ProcessId]).TotalSeconds) -lt 0.1 })
+    $tree = @(Get-TrackedProcesses $all $known ([datetime]::UtcNow))
     $phase = 'launch'
     $phaseFile = Join-Path $outputPath 'phase.json'
     if (Test-Path -LiteralPath $phaseFile) { $phase = (Get-Content -Raw -LiteralPath $phaseFile | ConvertFrom-Json).phase }
@@ -54,7 +42,7 @@ while ($clock.Elapsed.TotalSeconds -lt 600) {
     foreach ($proc in $tree) {
         $bytes = [long]$proc.PrivatePageCount
         $total += $bytes
-        $processRows.Add([pscustomobject]@{ Seconds=$elapsed; Phase=$phase; Pid=$proc.ProcessId; ParentPid=$proc.ParentProcessId; Name=$proc.Name; PrivateBytes=$bytes; Threads=$proc.ThreadCount })
+        $processRows.Add([pscustomobject]@{ Seconds=$elapsed; Phase=$phase; Pid=$proc.ProcessId; ParentPid=$proc.ParentProcessId; CreatedUtc=$proc.CreationDate.ToUniversalTime().ToString('o'); Name=$proc.Name; PrivateBytes=$bytes; Threads=$proc.ThreadCount })
     }
     $samples.Add([pscustomobject]@{ Seconds=$elapsed; Phase=$phase; Processes=$tree.Count; PrivateBytes=$total; PrivateMiB=[Math]::Round($total/1MB,3) })
     $app.Refresh()
