@@ -1,8 +1,8 @@
-//! Shared vocabulary for the later audio stage. No simulated playback state.
+//! Shared browser and local audio playback vocabulary.
 
 use serde::Serialize;
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlaybackMode {
     #[default]
@@ -10,7 +10,7 @@ pub enum PlaybackMode {
     RamSaver,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlaybackStatus {
     #[default]
@@ -19,4 +19,30 @@ pub enum PlaybackStatus {
     Playing,
     Paused,
     Stopped,
+    Ended,
+    Error,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackSnapshot {
+    pub status: PlaybackStatus,
+    pub path: Option<String>,
+    pub position_seconds: f64,
+    pub duration_seconds: Option<f64>,
+    pub volume: f32,
+    pub error: Option<String>,
+}
+
+impl Default for PlaybackSnapshot {
+    fn default() -> Self {
+        Self {
+            status: PlaybackStatus::Stopped,
+            path: None,
+            position_seconds: 0.0,
+            duration_seconds: None,
+            volume: 1.0,
+            error: None,
+        }
+    }
 }
