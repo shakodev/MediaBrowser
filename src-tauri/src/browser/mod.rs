@@ -7,7 +7,8 @@ use std::sync::atomic::Ordering;
 use serde::Deserialize;
 use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl, Window,
+    AppHandle, Emitter, EventTarget, LogicalPosition, LogicalSize, Manager, Webview, WebviewUrl,
+    Window,
 };
 
 use state::BrowserSnapshot;
@@ -29,9 +30,7 @@ pub fn publish(app: &AppHandle) {
     let snapshot = app.state::<BrowserState>().get();
     // Never broadcast browsing state to the remote child webview.
     for label in ["controller", "browser-toolbar"] {
-        if let Some(view) = app.get_webview(label) {
-            let _ = view.emit("browser-state", &snapshot);
-        }
+        let _ = app.emit_to(EventTarget::webview(label), "browser-state", &snapshot);
     }
 }
 
