@@ -13,6 +13,7 @@
     "withGlobalTauri": false,
     "windows": [{
       "label": "controller",
+      "create": false,
       "title": "MediaBrowser",
       "width": 980,
       "height": 740,

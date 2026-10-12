@@ -1746,6 +1746,8 @@ dependencies = [
  "tauri-build",
  "tokio",
  "url",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]
