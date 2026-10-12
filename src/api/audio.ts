@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface PlaybackSnapshot {
   status: "loading" | "stopped" | "paused" | "playing" | "ended" | "error";
-  queue: { title: string; total: number; current: number | null; shuffle: boolean; repeat: Repeat; skipped: number; notice: string | null } | null;
-  queuePage: { start: number; tracks: { metadata: NonNullable<PlaybackSnapshot["metadata"]>; unavailable: boolean; failed: boolean }[] } | null;
+  queue: { sourceUrl: string | null; sourceIndex: number | null; title: string; total: number; current: number | null; shuffle: boolean; repeat: Repeat; skipped: number; notice: string | null } | null;
+  queuePage: { start: number; tracks: { playlistIndex: number | null; metadata: NonNullable<PlaybackSnapshot["metadata"]>; unavailable: boolean; failed: boolean }[] } | null;
   path: string | null;
   metadata: { id: string; title: string; uploader: string | null; durationSeconds: number | null } | null;
   transfer: { bytesReceived: number; totalBytes: number; rangeRequests: number; urlRefreshes: number; bufferLimitBytes: number } | null;

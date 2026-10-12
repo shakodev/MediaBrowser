@@ -333,6 +333,55 @@ impl Worker {
                 self.load_youtube(url, None)?;
             }
             Operation::Queue(action) => self.queue_command(action)?,
+            Operation::PrepareHandoff(state) => self.prepare_handoff(state)?,
+            Operation::StartHandoff(state, observed) => {
+                state.validate()?;
+                if self.snapshot.metadata.as_ref().map(|m| &m.id) != Some(&state.video_id) {
+                    return Err("Prepared audio does not match the YouTube video.".into());
+                }
+                self.active = None;
+                self.queue_running = false;
+                self.prefetch = None;
+                self.volume.store(0.0f32.to_bits(), Ordering::Relaxed);
+                self.snapshot.volume = 0.0;
+                let mut decoder = self.open_decoder()?;
+                // Account for decoder initialization while the browser keeps playing.
+                let position = state.position_seconds
+                    + if state.paused {
+                        0.0
+                    } else {
+                        observed.elapsed().as_secs_f64()
+                    };
+                if self
+                    .snapshot
+                    .duration_seconds
+                    .is_some_and(|d| position >= d)
+                {
+                    return Err(
+                        "The video ended while preparing RAM Saver. Retry on the next track."
+                            .into(),
+                    );
+                }
+                decoder.seek(position)?;
+                self.start_decoder(decoder, position)?;
+                self.snapshot.position_seconds = position;
+            }
+            Operation::CommitHandoff { volume, paused } => {
+                if self.snapshot.status != Status::Playing
+                    || !volume.is_finite()
+                    || !(0.0..=1.0).contains(&volume)
+                {
+                    return Err("Audio stopped before the handoff could complete.".into());
+                }
+                if paused {
+                    self.active = None;
+                    self.snapshot.status = Status::Paused;
+                }
+                self.volume.store(volume.to_bits(), Ordering::Relaxed);
+                self.snapshot.volume = volume;
+                self.queue_running = !paused && self.queue.is_some();
+                self.schedule_prefetch()?;
+            }
             Operation::Play => {
                 if self.path.is_none() && self.youtube.is_none() {
                     return Err("Load a local audio file first.".into());

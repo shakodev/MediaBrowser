@@ -1,6 +1,23 @@
 use super::*;
+
+#[test]
+fn handoff_finds_original_index_and_rejects_missing_or_ambiguous_tracks() {
+    let mut list = Playlist::new().unwrap();
+    list.push(&track(0)).unwrap();
+    let mut duplicate = track(0);
+    duplicate.playlist_index = Some(8);
+    list.push(&duplicate).unwrap();
+    list.push(&track(9)).unwrap();
+    assert_eq!(list.locate("00000000000", Some(1)).unwrap(), 0);
+    assert_eq!(list.locate("00000000000", Some(8)).unwrap(), 1);
+    assert_eq!(list.locate("00000000009", Some(2)).unwrap(), 2);
+    assert!(list.locate("00000000000", None).is_err());
+    assert!(list.locate("00000000000", Some(4)).is_err());
+    assert!(list.locate("missing", Some(1)).is_err());
+}
 fn track(index: u64) -> Track {
     Track {
+        playlist_index: Some(index + 1),
         metadata: VideoMetadata {
             id: format!("{index:011}"),
             title: format!("Track {index}"),

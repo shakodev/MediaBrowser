@@ -47,6 +47,7 @@ pub fn canonical_playlist_url(input: &str) -> Result<Url, String> {
 
 #[derive(Deserialize)]
 struct FlatTrack {
+    playlist_index: Option<u64>,
     id: Option<String>,
     title: Option<String>,
     uploader: Option<String>,
@@ -78,6 +79,7 @@ fn append(playlist: &mut Playlist, line: &[u8]) -> Result<(), String> {
         )
         || matches!(title.as_str(), "[Private video]" | "[Deleted video]");
     playlist.push(&Track {
+        playlist_index: flat.playlist_index.filter(|i| *i > 0),
         metadata: super::VideoMetadata {
             id: if valid_id { id } else { String::new() },
             title: bounded(&title, 200),
@@ -119,7 +121,8 @@ impl YtDlpResolver {
         let url = canonical_playlist_url(url.as_str())?;
         // Project a dictionary before encoding: individual missing %(field)j values
         // print the bare NA placeholder, which is not valid JSON.
-        let template = "%(.{id,title,uploader,duration,availability,playlist_title})j";
+        let template =
+            "%(.{id,title,uploader,duration,availability,playlist_title,playlist_index})j";
         let mut command = Command::new(&self.executable);
         command
             .args([
@@ -215,11 +218,12 @@ mod tests {
         append(&mut list, br#"{"id":"BaW_jenozKc","title":"[Private video]","duration":"NA","playlist_title":"Test"}"#).unwrap();
         append(
             &mut list,
-            br#"{"id":"aqz-KE-bpKQ","title":"Playable","duration":15}"#,
+            br#"{"id":"aqz-KE-bpKQ","title":"Playable","duration":15,"playlist_index":8}"#,
         )
         .unwrap();
         assert_eq!(list.len, 2);
         assert!(list.track(0).unwrap().unavailable);
         assert_eq!(list.track(1).unwrap().metadata.duration_seconds, Some(15.0));
+        assert_eq!(list.track(1).unwrap().playlist_index, Some(8));
     }
 }

@@ -16,6 +16,9 @@ static SERIAL: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Track {
+    /// Original one-based public playlist index, including hidden entries when provided.
+    #[serde(default)]
+    pub playlist_index: Option<u64>,
     pub metadata: VideoMetadata,
     pub unavailable: bool,
     pub failed: bool,
@@ -98,6 +101,25 @@ impl Playlist {
         let mut track = self.track(index)?;
         track.failed = failed;
         self.write(index, &track)
+    }
+    /// Hidden entries can shift extraction order; ambiguous duplicates must fail.
+    pub fn locate(&mut self, id: &str, one_based: Option<u64>) -> Result<u64, String> {
+        let mut found = None;
+        let mut ambiguous = false;
+        for index in 0..self.len {
+            let track = self.track(index)?;
+            if track.metadata.id == id {
+                if one_based == Some(track.playlist_index.unwrap_or(index + 1)) {
+                    return Ok(index);
+                }
+                ambiguous |= found.is_some();
+                found = Some(index);
+            }
+        }
+        if ambiguous {
+            return Err("The video appears more than once and its playlist index changed. Reload the playlist in YouTube.".into());
+        }
+        found.ok_or_else(|| "The current video was not found in the public playlist. Browser playback is preserved.".into())
     }
     pub fn page(&mut self, start: u64) -> Result<Vec<Track>, String> {
         (start.min(self.len)..self.len.min(start.saturating_add(PAGE_SIZE as u64)))
@@ -239,6 +261,8 @@ fn gcd(mut a: u64, mut b: u64) -> u64 {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueueSnapshot {
+    pub source_url: Option<String>,
+    pub source_index: Option<u64>,
     pub title: String,
     pub total: u64,
     pub current: Option<u64>,
@@ -266,6 +290,7 @@ pub enum QueueAction {
     Page { start: u64 },
 }
 pub struct Queue {
+    pub source_url: Option<String>,
     pub playlist: Playlist,
     pub order: Order,
     pub skipped: u64,
@@ -276,6 +301,7 @@ pub struct Queue {
 impl Queue {
     pub fn new(playlist: Playlist) -> Self {
         Self {
+            source_url: None,
             order: Order::new(playlist.len),
             playlist,
             skipped: 0,
@@ -304,6 +330,8 @@ impl Queue {
     }
     pub fn snapshot(&self) -> QueueSnapshot {
         QueueSnapshot {
+            source_url: self.source_url.clone(),
+            source_index: self.order.current().map(|i| i + 1),
             title: self.playlist.title.clone(),
             total: self.playlist.len,
             current: self.order.current(),

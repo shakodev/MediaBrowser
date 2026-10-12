@@ -3,6 +3,38 @@ use super::*;
 use crate::queue::{QueueAction, QueuePage};
 
 impl Worker {
+    pub(super) fn prepare_handoff(
+        &mut self,
+        state: crate::playback_state::BrowserPlayback,
+    ) -> Result<(), String> {
+        state.validate()?;
+        self.active = None;
+        self.clear_queue();
+        if state.playlist_id.is_some() {
+            let url = crate::resolver::playlist::canonical_playlist_url(&state.url)?;
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| "Cannot start playlist runtime.")?;
+            let resolver = YtDlpResolver::default();
+            let mut playlist = runtime.block_on(async {
+                tokio::select! { biased; _ = self.cancel.cancelled() => Err("Handoff cancelled.".into()), result = resolver.playlist(&url) => result }
+            })?;
+            let index = playlist.locate(&state.video_id, state.playlist_index)?;
+            if playlist.track(index)?.unavailable {
+                return Err("The current playlist track is unavailable.".into());
+            }
+            let mut queue = Queue::new(playlist);
+            queue.source_url = Some(url.to_string());
+            queue.order.select(index)?;
+            self.page_start =
+                index / crate::queue::PAGE_SIZE as u64 * crate::queue::PAGE_SIZE as u64;
+            self.queue = Some(queue);
+        }
+        // Do not use play_queue: the initial handoff must never skip the requested track.
+        self.load_youtube(crate::resolver::canonical_video_url(&state.url)?, None)?;
+        Ok(())
+    }
     pub(super) fn clear_queue(&mut self) {
         self.prefetch = None;
         self.queue = None;
@@ -113,6 +145,7 @@ impl Worker {
                     tokio::select! { biased; _ = self.cancel.cancelled() => Err("Playlist load cancelled.".into()), result = resolver.playlist(&url) => result }
                 })?;
                 self.queue = Some(Queue::new(playlist));
+                self.queue.as_mut().unwrap().source_url = Some(url.to_string());
                 self.page_start = 0;
                 self.play_queue(0)?;
             }
@@ -161,6 +194,17 @@ impl Worker {
     }
     pub(super) fn refresh_queue_snapshot(&mut self) -> Result<(), String> {
         self.snapshot.queue = self.queue.as_ref().map(Queue::snapshot);
+        if let (Some(queue), Some(snapshot)) = (&mut self.queue, &mut self.snapshot.queue) {
+            if let Some(index) = queue.order.current() {
+                snapshot.source_index = Some(
+                    queue
+                        .playlist
+                        .track(index)?
+                        .playlist_index
+                        .unwrap_or(index + 1),
+                );
+            }
+        }
         self.snapshot.queue_page = match &mut self.queue {
             Some(queue) => Some(QueuePage {
                 start: self.page_start,

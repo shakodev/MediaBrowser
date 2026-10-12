@@ -19,6 +19,9 @@ pub use crate::playback_state::PlaybackSnapshot;
 pub(crate) enum Operation {
     Load(PathBuf),
     LoadYoutube(url::Url),
+    PrepareHandoff(crate::playback_state::BrowserPlayback),
+    StartHandoff(crate::playback_state::BrowserPlayback, std::time::Instant),
+    CommitHandoff { volume: f32, paused: bool },
     Queue(crate::queue::QueueAction),
     Play,
     Pause,
@@ -78,6 +81,8 @@ impl AudioEngine {
             let disruptive = matches!(
                 operation,
                 Operation::Load(_)
+                    | Operation::PrepareHandoff(_)
+                    | Operation::StartHandoff(_, _)
                     | Operation::LoadYoutube(_)
                     | Operation::Queue(
                         crate::queue::QueueAction::Load { .. }
@@ -129,6 +134,29 @@ impl AudioEngine {
     }
     pub async fn play(&self) -> Result<PlaybackSnapshot, String> {
         self.request(Operation::Play).await
+    }
+    pub async fn prepare_handoff(
+        &self,
+        state: crate::playback_state::BrowserPlayback,
+    ) -> Result<PlaybackSnapshot, String> {
+        state.validate()?;
+        self.request(Operation::PrepareHandoff(state)).await
+    }
+    pub async fn start_handoff(
+        &self,
+        state: crate::playback_state::BrowserPlayback,
+    ) -> Result<PlaybackSnapshot, String> {
+        state.validate()?;
+        self.request(Operation::StartHandoff(state, std::time::Instant::now()))
+            .await
+    }
+    pub async fn commit_handoff(
+        &self,
+        volume: f32,
+        paused: bool,
+    ) -> Result<PlaybackSnapshot, String> {
+        self.request(Operation::CommitHandoff { volume, paused })
+            .await
     }
     pub async fn queue(
         &self,

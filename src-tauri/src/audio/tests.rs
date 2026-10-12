@@ -312,6 +312,48 @@ fn youtube_transport_uses_remote_source_and_preserves_seek_and_pause() {
     worker.command(Operation::Play).unwrap();
     worker.command(Operation::Stop).unwrap();
     assert_eq!(worker.snapshot.position_seconds, 0.0);
+    // Handoff preparation must not start output or lose the captured position.
+    let target = crate::playback_state::BrowserPlayback {
+        url: "https://www.youtube.com/watch?v=BaW_jenozKc".into(),
+        video_id: "BaW_jenozKc".into(),
+        playlist_id: None,
+        playlist_index: None,
+        position_seconds: 0.04,
+        volume: 0.37,
+        paused: true,
+    };
+    worker
+        .command(Operation::PrepareHandoff(target.clone()))
+        .unwrap();
+    assert!(renderer.borrow().is_none());
+    worker
+        .command(Operation::StartHandoff(target.clone(), Instant::now()))
+        .unwrap();
+    assert_eq!(worker.snapshot.position_seconds, 0.04);
+    assert!(!worker.queue_running);
+    assert!(pump(&mut worker, &renderer)
+        .iter()
+        .all(|sample| *sample == 0.0));
+    assert!(worker.snapshot.position_seconds > 0.04);
+    worker
+        .command(Operation::CommitHandoff {
+            volume: 0.37,
+            paused: true,
+        })
+        .unwrap();
+    assert_eq!(worker.snapshot.status, Status::Paused);
+    assert_eq!(worker.snapshot.volume, 0.37);
+    assert!(renderer.borrow().is_none());
+    // A mismatched prepared track is rejected before starting any output.
+    let wrong = crate::playback_state::BrowserPlayback {
+        url: "https://www.youtube.com/watch?v=aqz-KE-bpKQ".into(),
+        video_id: "aqz-KE-bpKQ".into(),
+        ..target
+    };
+    assert!(worker
+        .command(Operation::StartHandoff(wrong, Instant::now()))
+        .is_err());
+    assert!(renderer.borrow().is_none());
 }
 
 #[test]
@@ -408,6 +450,7 @@ fn test_queue(len: u64, unavailable: Option<u64>) -> Queue {
     let mut list = crate::queue::Playlist::new().unwrap();
     for index in 0..len {
         list.push(&crate::queue::Track {
+            playlist_index: Some(index + 1),
             metadata: crate::resolver::VideoMetadata {
                 id: format!("{index:011}"),
                 title: format!("Flat {index}"),
