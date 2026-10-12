@@ -656,7 +656,16 @@ h3 {
   border-radius: 5px;
   padding: 8px;
 }
-#audio-path { flex: 1; }
+#audio-path, #youtube-url, #playlist-url { flex: 1; }
+.local-file-form + .local-file-form { margin-top: 8px; }
+.track-metadata, #queue-notice { color: #9ba99a; }
+.queue-heading, .queue-controls, .queue-pagination { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.queue-heading { justify-content: space-between; }
+.queue-controls label { display: flex; align-items: center; gap: 5px; }
+.local-player select { background: #101415; color: inherit; border: 1px solid #353d37; border-radius: 5px; padding: 6px; }
+.queue-tracks { max-height: 240px; overflow-y: auto; padding-left: 32px; margin-block: 10px; }
+.queue-tracks button { width: 100%; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-tracks .current-track { background: #293526; color: #b8e78d; }
 .local-transport { margin: 12px 0; flex-wrap: wrap; }
 .local-player button { border-radius: 5px; padding: 8px 12px; }
 .volume-control { margin-left: auto; }

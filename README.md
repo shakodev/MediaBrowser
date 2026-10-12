@@ -27,6 +27,27 @@ The executable is `src-tauri/target/release/media-browser.exe`. Installer packag
 - Last committed YouTube URL is atomically saved under `%APPDATA%/com.mediabrowser.desktop/browser-state.json` and restored when the browser is next opened. Consent and sign-in URLs never replace the saved YouTube URL.
 - Closing the browser releases its views; reopening restores the saved page. Closing the controller exits the application.
 - Local MP3, AAC (ADTS), and AAC-LC M4A playback through a custom Rust engine. Paste a file path into **Local playback**, load it, then use Play/Pause/Stop, volume, the position slider, or a seek time in seconds. Quoted Windows paths are accepted.
+- YouTube playlist playback with automatic advancement, previous/next, track selection, shuffle, repeat off/all/one, and a paged track list with current-track metadata.
+
+## Playlists
+
+Paste a public YouTube playlist URL (or a watch URL containing `list=`) into the playlist field and press **Play playlist**. The app extracts flat metadata first, then starts the first playable track. Select any track from the list; use the page controls to browse long playlists or **Show current track** to locate playback. Pause and Stop suspend automatic advancement. Loading a single video or local file replaces the queue.
+
+`resolver/playlist.rs` runs yt-dlp with `--flat-playlist --lazy-playlist --skip-download` and a compact JSON projection, reading one line at a time with a 16 KiB cap and a 60-second inactivity timeout. Missing optional fields and unavailable entries are retained. The Rust queue stores metadata and failure flags in a temporary file using fixed 4 KiB records, with no growing in-memory index. The file uses Windows delete-on-close and is released when replacing the queue or exiting. Disk usage grows with track count; free disk space is required. Loading waits for metadata extraction to complete before playback starts.
+
+Rust and the UI retain at most one page of 40 tracks per snapshot. Shuffle computes an affine permutation with a coprime stride instead of allocating a playlist-sized array; every entry is visited once per pass, and Previous retraces that order. This offers fewer possible orders than a full Fisher–Yates shuffle. Changing shuffle preserves the current track. Repeat One applies to automatic completion; manual Next still advances.
+
+Signed audio URLs remain in Rust. Only the current track and one cancellable next-track resolution are retained; prefetch downloads no audio. Prefetched results expire after 60 seconds and are resolved again on demand. Queue changes, pause, stop, seek, replacement and shutdown cancel or discard speculative work. Existing HTTP URL refresh handles rejected/expired playback URLs.
+
+Unavailable entries and resolution/decoding failures are marked and skipped in the requested direction. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. Queue persistence and RAM Saver mode switching are outside this stage.
+
+Metadata-only live verification (no audio resolution or playback):
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --example playlist_smoke -- 'https://www.youtube.com/playlist?list=YOUR_PLAYLIST_ID'
+```
+
+Verified on 12 October 2026 with yt-dlp 2026.08.19: the public **Data Analysis with Dr Mike Pound** playlist produced 11 indexed tracks, with successful first-page and final-record reads. Tests cover sequential/shuffled traversal, repeat, manual selection, backward failure recovery, automatic advancement, unavailable resolution and runtime failures, retry, cancellation, prefetch expiry/reaping, metadata limits and 10,000-track bounded paging. Live playlist audio transitions have not been manually listened to.
 
 ## Structure and security
 
