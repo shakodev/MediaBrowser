@@ -1,6 +1,7 @@
 pub mod audio;
 mod browser;
 pub mod playback_state;
+pub mod queue;
 pub mod resolver;
 
 use tauri::Manager;

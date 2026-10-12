@@ -1,4 +1,5 @@
 //! yt-dlp resolves public videos only. It never transfers or transforms media.
+pub mod playlist;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -7,7 +8,7 @@ use std::{
 use tokio::{io::AsyncReadExt, process::Command};
 use url::Url;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoMetadata {
     pub id: String,
