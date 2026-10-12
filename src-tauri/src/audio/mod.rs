@@ -19,6 +19,7 @@ pub use crate::playback_state::PlaybackSnapshot;
 pub(crate) enum Operation {
     Load(PathBuf),
     LoadYoutube(url::Url),
+    Queue(crate::queue::QueueAction),
     Play,
     Pause,
     Stop,
@@ -78,6 +79,12 @@ impl AudioEngine {
                 operation,
                 Operation::Load(_)
                     | Operation::LoadYoutube(_)
+                    | Operation::Queue(
+                        crate::queue::QueueAction::Load { .. }
+                            | crate::queue::QueueAction::Next
+                            | crate::queue::QueueAction::Previous
+                            | crate::queue::QueueAction::Select { .. }
+                    )
                     | Operation::Pause
                     | Operation::Stop
                     | Operation::Seek(_)
@@ -122,6 +129,15 @@ impl AudioEngine {
     }
     pub async fn play(&self) -> Result<PlaybackSnapshot, String> {
         self.request(Operation::Play).await
+    }
+    pub async fn queue(
+        &self,
+        action: crate::queue::QueueAction,
+    ) -> Result<PlaybackSnapshot, String> {
+        if let crate::queue::QueueAction::Load { url } = &action {
+            crate::resolver::playlist::canonical_playlist_url(url)?;
+        }
+        self.request(Operation::Queue(action)).await
     }
     pub async fn pause(&self) -> Result<PlaybackSnapshot, String> {
         self.request(Operation::Pause).await

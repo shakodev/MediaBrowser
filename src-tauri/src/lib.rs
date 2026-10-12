@@ -30,6 +30,7 @@ pub fn run() {
             audio::commands::audio_seek,
             audio::commands::audio_volume,
             audio::commands::audio_snapshot,
+            audio::commands::audio_queue,
         ])
         .on_window_event(|window, event| {
             if window.label() == "controller" && matches!(event, tauri::WindowEvent::Destroyed) {

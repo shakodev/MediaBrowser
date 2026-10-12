@@ -82,3 +82,13 @@ pub async fn audio_load_youtube(
     authorize(&webview)?;
     engine.load_youtube(&url).await
 }
+
+#[tauri::command]
+pub async fn audio_queue(
+    webview: Webview,
+    engine: State<'_, AudioEngine>,
+    action: crate::queue::QueueAction,
+) -> Result<PlaybackSnapshot, String> {
+    authorize(&webview)?;
+    engine.queue(action).await
+}

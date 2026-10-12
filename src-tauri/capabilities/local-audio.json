@@ -6,6 +6,6 @@
   "webviews": ["controller"],
   "permissions": [
     "allow-audio-load", "allow-audio-load-youtube", "allow-audio-play", "allow-audio-pause", "allow-audio-stop",
-    "allow-audio-seek", "allow-audio-volume", "allow-audio-snapshot"
+    "allow-audio-seek", "allow-audio-volume", "allow-audio-snapshot", "allow-audio-queue"
   ]
 }

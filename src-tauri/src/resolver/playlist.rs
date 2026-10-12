@@ -4,7 +4,7 @@ use crate::queue::{Playlist, Track};
 use serde::Deserialize;
 use std::{process::Stdio, time::Duration};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
     process::Command,
 };
 use url::Url;
@@ -91,10 +91,35 @@ fn append(playlist: &mut Playlist, line: &[u8]) -> Result<(), String> {
         failed: false,
     })
 }
+async fn read_metadata(reader: &mut (impl AsyncBufRead + Unpin)) -> Result<Playlist, String> {
+    let mut playlist = Playlist::new()?;
+    loop {
+        // take limits read_until allocation, including maliciously long lines.
+        let mut line = Vec::new();
+        let count = tokio::time::timeout(
+            Duration::from_secs(60),
+            (&mut *reader).take(16385).read_until(b'\n', &mut line),
+        )
+        .await
+        .map_err(|_| "Playlist extraction stalled for 60 seconds.")?
+        .map_err(|_| "Cannot read playlist metadata.")?;
+        if count == 0 {
+            break;
+        }
+        if count > 16384 || !line.ends_with(b"\n") {
+            return Err("Playlist metadata line exceeds its limit or is incomplete.".into());
+        }
+        append(&mut playlist, &line)?;
+    }
+    Ok(playlist)
+}
+
 impl YtDlpResolver {
     pub async fn playlist(&self, url: &Url) -> Result<Playlist, String> {
         let url = canonical_playlist_url(url.as_str())?;
-        let template = r#"{"id":%(id)j,"title":%(title)j,"uploader":%(uploader)j,"duration":%(duration)j,"availability":%(availability)j,"playlist_title":%(playlist_title)j}"#;
+        // Project a dictionary before encoding: individual missing %(field)j values
+        // print the bare NA placeholder, which is not valid JSON.
+        let template = "%(.{id,title,uploader,duration,availability,playlist_title})j";
         let mut command = Command::new(&self.executable);
         command
             .args([
@@ -107,6 +132,8 @@ impl YtDlpResolver {
                 "--no-warnings",
                 "--no-progress",
                 "--no-cache-dir",
+                "--encoding",
+                "utf-8",
                 "--socket-timeout",
                 "15",
                 "--retries",
@@ -127,25 +154,7 @@ impl YtDlpResolver {
         })?;
         let mut reader =
             BufReader::new(child.stdout.take().ok_or("Missing playlist output pipe.")?);
-        let mut playlist = Playlist::new()?;
-        loop {
-            // take limits read_until allocation, including maliciously long lines.
-            let mut line = Vec::new();
-            let count = tokio::time::timeout(
-                Duration::from_secs(60),
-                (&mut reader).take(16385).read_until(b'\n', &mut line),
-            )
-            .await
-            .map_err(|_| "Playlist extraction stalled for 60 seconds.")?
-            .map_err(|_| "Cannot read playlist metadata.")?;
-            if count == 0 {
-                break;
-            }
-            if count > 16384 || !line.ends_with(b"\n") {
-                return Err("Playlist metadata line exceeds its limit or is incomplete.".into());
-            }
-            append(&mut playlist, &line)?;
-        }
+        let playlist = read_metadata(&mut reader).await?;
         let status = tokio::time::timeout(Duration::from_secs(15), child.wait())
             .await
             .map_err(|_| "Playlist extractor did not exit.")?
@@ -163,6 +172,28 @@ impl YtDlpResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn metadata_reader_bounds_lines_and_handles_missing_fields_and_unicode() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            // Same dictionary shape as real yt-dlp: missing keys are omitted.
+            let json = format!("{}\n", serde_json::json!({ "id": "BaW_jenozKc", "title": "🎵".repeat(1000), "playlist_title": "Public playlist" }));
+            let mut list = read_metadata(&mut BufReader::new(json.as_bytes())).await.unwrap();
+            let track = list.track(0).unwrap();
+            assert_eq!(track.metadata.title.chars().count(), 200);
+            assert_eq!(track.metadata.duration_seconds, None);
+            assert_eq!(track.metadata.uploader, None);
+            assert!(!track.unavailable);
+            let huge = vec![b'x'; 16385];
+            for bad in [huge.as_slice(), b"{broken}\n", b"{}"] {
+                assert!(read_metadata(&mut BufReader::new(bad)).await.is_err());
+            }
+            assert_eq!(read_metadata(&mut BufReader::new(b"".as_slice())).await.unwrap().len, 0);
+        });
+    }
     #[test]
     fn urls_are_canonical_and_flat_unavailable_entries_are_retained() {
         assert_eq!(

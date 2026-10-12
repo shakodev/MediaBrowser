@@ -284,6 +284,9 @@ impl Queue {
         }
     }
     pub fn failed(&mut self) -> Result<Option<u64>, String> {
+        self.failed_in_direction(false)
+    }
+    pub fn failed_in_direction(&mut self, backwards: bool) -> Result<Option<u64>, String> {
         if let Some(index) = self.order.current() {
             self.playlist.mark_failed(index, true)?;
         }
@@ -293,7 +296,11 @@ impl Queue {
         if self.consecutive_failures >= self.playlist.len {
             return Ok(None);
         }
-        Ok(self.order.next(false, true))
+        Ok(if backwards {
+            self.order.previous()
+        } else {
+            self.order.next(false, true)
+        })
     }
     pub fn snapshot(&self) -> QueueSnapshot {
         QueueSnapshot {

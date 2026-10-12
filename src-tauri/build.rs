@@ -14,6 +14,7 @@ fn main() {
             "audio_seek",
             "audio_volume",
             "audio_snapshot",
+            "audio_queue",
         ]),
     ))
     .expect("failed to build Tauri application metadata");

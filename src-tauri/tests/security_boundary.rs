@@ -53,7 +53,8 @@ fn local_audio_permissions_are_controller_only() {
             "allow-audio-stop",
             "allow-audio-seek",
             "allow-audio-volume",
-            "allow-audio-snapshot"
+            "allow-audio-snapshot",
+            "allow-audio-queue"
         ])
     );
 }

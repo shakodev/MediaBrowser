@@ -6,6 +6,7 @@ use super::{
     Operation, Request,
 };
 use crate::playback_state::{PlaybackSnapshot, PlaybackStatus as Status};
+use crate::queue::{prefetch::Prefetch, Queue};
 use crate::resolver::{ResolvedStream, StreamResolver, YtDlpResolver};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
@@ -129,6 +130,10 @@ struct YoutubeTrack {
 }
 
 struct Worker {
+    queue: Option<Queue>,
+    queue_running: bool,
+    page_start: u64,
+    prefetch: Option<Prefetch>,
     snapshot: PlaybackSnapshot,
     path: Option<PathBuf>,
     youtube: Option<YoutubeTrack>,
@@ -142,6 +147,10 @@ struct Worker {
 impl Worker {
     fn new(backend: Box<dyn Backend>) -> Self {
         Self {
+            queue: None,
+            queue_running: false,
+            page_start: 0,
+            prefetch: None,
             snapshot: PlaybackSnapshot::default(),
             path: None,
             youtube: None,
@@ -178,6 +187,39 @@ impl Worker {
                 }
                 Err(error) => self.fail(error),
                 _ => {}
+            }
+        }
+        if self.queue_running
+            && !self.cancel.is_cancelled()
+            && matches!(self.snapshot.status, Status::Ended | Status::Error)
+        {
+            let failed = self.snapshot.status == Status::Error;
+            let next = if let Some(queue) = &mut self.queue {
+                if failed {
+                    queue.failed()
+                } else {
+                    queue.consecutive_failures = 0;
+                    Ok(queue.order.next(true, false))
+                }
+            } else {
+                Ok(None)
+            };
+            match next {
+                Ok(Some(index)) => {
+                    if let Err(error) = self.play_queue(index) {
+                        self.queue_running = false;
+                        self.fail(error);
+                    }
+                }
+                Ok(None) => {
+                    self.queue_running = false;
+                    self.prefetch = None;
+                }
+                Err(error) => {
+                    self.queue_running = false;
+                    self.prefetch = None;
+                    self.fail(error);
+                }
             }
         }
     }
@@ -227,6 +269,46 @@ impl Worker {
         self.snapshot.error = None;
         Ok(())
     }
+    fn resolve(&self, url: &Url) -> Result<ResolvedStream, String> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| "Cannot start resolver runtime.")?;
+        runtime.block_on(async {
+            tokio::select! { biased; _ = self.cancel.cancelled() => Err("Audio request cancelled.".into()), result = self.resolver.resolve(url) => result }
+        })
+    }
+    fn load_youtube(&mut self, url: Url, cached: Option<ResolvedStream>) -> Result<(), String> {
+        let stream = match cached {
+            Some(stream) => stream,
+            None => self.resolve(&url)?,
+        };
+        let stats = Arc::new(TransferStats::default());
+        let source = HttpSource::open(
+            url.clone(),
+            stream.clone(),
+            self.resolver.clone(),
+            self.cancel.clone(),
+            stats.clone(),
+        )?;
+        let mut decoder = AudioDecoder::from_source(
+            Box::new(source),
+            &stream.extension,
+            Some(self.cancel.clone()),
+        )?;
+        decoder.next_block()?.ok_or("Audio stream is empty.")?;
+        self.active = None;
+        self.path = None;
+        self.snapshot.path = Some(url.to_string());
+        self.snapshot.metadata = Some(stream.metadata.clone());
+        self.snapshot.duration_seconds = decoder.duration.or(stream.metadata.duration_seconds);
+        self.snapshot.transfer = Some(stats.snapshot());
+        self.youtube = Some(YoutubeTrack { url, stream, stats });
+        self.snapshot.position_seconds = 0.0;
+        self.snapshot.status = Status::Paused;
+        self.snapshot.error = None;
+        Ok(())
+    }
     fn command(&mut self, operation: Operation) -> Result<PlaybackSnapshot, String> {
         self.update();
         match operation {
@@ -234,6 +316,7 @@ impl Worker {
                 // Validate before replacing a currently playing track.
                 let mut decoder = AudioDecoder::open(&path)?;
                 decoder.next_block()?.ok_or("Audio file is empty.")?;
+                self.clear_queue();
                 self.active = None;
                 self.snapshot.path = Some(path.to_string_lossy().into_owned());
                 self.path = Some(path);
@@ -246,39 +329,10 @@ impl Worker {
                 self.snapshot.error = None;
             }
             Operation::LoadYoutube(url) => {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|_| "Cannot start resolver runtime.")?;
-                let stream = runtime.block_on(async {
-                    tokio::select! { biased; _ = self.cancel.cancelled() => Err("Audio request cancelled.".into()), result = self.resolver.resolve(&url) => result }
-                })?;
-                let stats = Arc::new(TransferStats::default());
-                let source = HttpSource::open(
-                    url.clone(),
-                    stream.clone(),
-                    self.resolver.clone(),
-                    self.cancel.clone(),
-                    stats.clone(),
-                )?;
-                let mut decoder = AudioDecoder::from_source(
-                    Box::new(source),
-                    &stream.extension,
-                    Some(self.cancel.clone()),
-                )?;
-                decoder.next_block()?.ok_or("Audio stream is empty.")?;
-                self.active = None;
-                self.path = None;
-                self.snapshot.path = Some(url.to_string());
-                self.snapshot.metadata = Some(stream.metadata.clone());
-                self.snapshot.duration_seconds =
-                    decoder.duration.or(stream.metadata.duration_seconds);
-                self.snapshot.transfer = Some(stats.snapshot());
-                self.youtube = Some(YoutubeTrack { url, stream, stats });
-                self.snapshot.position_seconds = 0.0;
-                self.snapshot.status = Status::Paused;
-                self.snapshot.error = None;
+                self.clear_queue();
+                self.load_youtube(url, None)?;
             }
+            Operation::Queue(action) => self.queue_command(action)?,
             Operation::Play => {
                 if self.path.is_none() && self.youtube.is_none() {
                     return Err("Load a local audio file first.".into());
@@ -295,20 +349,27 @@ impl Worker {
                     }
                     self.snapshot.position_seconds = position;
                 }
+                self.queue_running = self.queue.is_some();
+                self.schedule_prefetch()?;
             }
             Operation::Pause => {
+                self.queue_running = false;
+                self.prefetch = None;
                 if self.snapshot.status == Status::Playing {
                     self.active = None;
                     self.snapshot.status = Status::Paused;
                 }
             }
             Operation::Stop => {
+                self.queue_running = false;
+                self.prefetch = None;
                 self.active = None;
                 self.snapshot.position_seconds = 0.0;
                 self.snapshot.status = Status::Stopped;
                 self.snapshot.error = None;
             }
             Operation::Seek(seconds) => {
+                self.prefetch = None;
                 if !seconds.is_finite() || !(0.0..=1e9).contains(&seconds) {
                     return Err(
                         "Seek position must be a finite, non-negative number of seconds.".into(),
@@ -351,6 +412,7 @@ impl Worker {
             }
             Operation::Snapshot => {}
         }
+        self.refresh_queue_snapshot()?;
         Ok(self.snapshot.clone())
     }
 }
@@ -358,7 +420,7 @@ impl Worker {
 pub fn run(receiver: mpsc::Receiver<Request>) {
     let mut worker = Worker::new(Box::<CpalBackend>::default());
     loop {
-        let request = if worker.active.is_some() {
+        let request = if worker.active.is_some() || worker.queue_running {
             match receiver.recv_timeout(Duration::from_millis(4)) {
                 Ok(request) => Some(request),
                 Err(mpsc::RecvTimeoutError::Timeout) => None,
@@ -401,3 +463,6 @@ pub fn run(receiver: mpsc::Receiver<Request>) {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[path = "queue.rs"]
+mod queue_playback;

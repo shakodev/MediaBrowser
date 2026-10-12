@@ -1,5 +1,6 @@
 use super::super::output::OutputSpec;
 use super::*;
+use crate::queue::QueueAction;
 use std::{cell::RefCell, path::Path, rc::Rc};
 
 fn fixture(extension: &str) -> PathBuf {
@@ -367,4 +368,209 @@ fn stop_cancels_accepted_work_and_queue_backpressure_does_not_cancel_it() {
         assert!(!token.is_cancelled());
         drop(receiver);
     });
+}
+
+struct QueueResolver {
+    url: Url,
+    fail_mask: AtomicU64,
+    calls: std::sync::Mutex<Vec<u64>>,
+}
+impl StreamResolver for QueueResolver {
+    fn resolve<'a>(&'a self, url: &'a Url) -> crate::resolver::ResolveFuture<'a> {
+        Box::pin(async move {
+            let id = url
+                .query_pairs()
+                .find(|(key, _)| key == "v")
+                .unwrap()
+                .1
+                .into_owned();
+            let index = id.parse::<u64>().unwrap();
+            self.calls.lock().unwrap().push(index);
+            if self.fail_mask.load(Ordering::Relaxed) & (1 << index) != 0 {
+                return Err("Unavailable test video".into());
+            }
+            Ok(ResolvedStream {
+                media_url: self.url.clone(),
+                headers: Default::default(),
+                format_id: "140".into(),
+                extension: "m4a".into(),
+                metadata: crate::resolver::VideoMetadata {
+                    id,
+                    title: format!("Resolved {index}"),
+                    uploader: Some("Test artist".into()),
+                    duration_seconds: Some(0.3),
+                },
+            })
+        })
+    }
+}
+fn test_queue(len: u64, unavailable: Option<u64>) -> Queue {
+    let mut list = crate::queue::Playlist::new().unwrap();
+    for index in 0..len {
+        list.push(&crate::queue::Track {
+            metadata: crate::resolver::VideoMetadata {
+                id: format!("{index:011}"),
+                title: format!("Flat {index}"),
+                uploader: None,
+                duration_seconds: None,
+            },
+            unavailable: unavailable == Some(index),
+            failed: false,
+        })
+        .unwrap();
+    }
+    Queue::new(list)
+}
+
+#[test]
+fn playlist_skips_resolution_and_runtime_failures_then_recovers_on_manual_retry() {
+    let server =
+        super::super::http::tests::Server::new(std::fs::read(fixture("m4a")).unwrap(), "ok");
+    let resolver = Arc::new(QueueResolver {
+        url: server.url.clone(),
+        fail_mask: AtomicU64::new(0b10),
+        calls: Default::default(),
+    });
+    let (mut worker, renderer) = worker();
+    worker.resolver = resolver.clone();
+    worker.queue = Some(test_queue(4, Some(0)));
+    // Known deleted entries must never reach the audio resolver.
+    worker.play_queue(0).unwrap();
+    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(2));
+    assert_eq!(worker.queue.as_ref().unwrap().skipped, 2);
+    assert_eq!(
+        worker.snapshot.metadata.as_ref().unwrap().title,
+        "Resolved 2"
+    );
+    assert!(pump(&mut worker, &renderer).iter().any(|v| v.abs() > 0.001));
+    assert!(!resolver.calls.lock().unwrap().contains(&0));
+    // A mid-stream decoder/device failure advances automatically without a UI command.
+    worker.prefetch = None;
+    worker.fail("Injected decoder failure".into());
+    worker.update();
+    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(3));
+    assert_eq!(worker.snapshot.status, Status::Playing);
+    assert_eq!(worker.queue.as_ref().unwrap().skipped, 3);
+    resolver.fail_mask.store(0, Ordering::Relaxed);
+    let selected = worker
+        .command(Operation::Queue(QueueAction::Select { index: 1 }))
+        .unwrap();
+    assert_eq!(selected.queue.unwrap().current, Some(1));
+    assert_eq!(selected.metadata.unwrap().title, "Resolved 1");
+    assert!(
+        !worker
+            .queue
+            .as_mut()
+            .unwrap()
+            .playlist
+            .track(1)
+            .unwrap()
+            .failed
+    );
+    worker.command(Operation::Pause).unwrap();
+    assert!(!worker.queue_running);
+    assert!(worker.prefetch.is_none());
+    worker.command(Operation::Play).unwrap();
+    assert!(worker.queue_running);
+    worker.command(Operation::Stop).unwrap();
+    worker.update();
+    assert_eq!(worker.snapshot.status, Status::Stopped);
+    assert!(worker.prefetch.is_none());
+}
+
+#[test]
+fn playlist_eof_advances_and_repeat_one_replays_then_stops_at_end() {
+    let server =
+        super::super::http::tests::Server::new(std::fs::read(fixture("m4a")).unwrap(), "ok");
+    let (mut worker, _renderer) = worker();
+    worker.resolver = Arc::new(QueueResolver {
+        url: server.url.clone(),
+        fail_mask: AtomicU64::new(0),
+        calls: Default::default(),
+    });
+    worker.queue = Some(test_queue(3, None));
+    worker.play_queue(0).unwrap();
+    // Model the drained EOF state; device drain timing already has its own tests.
+    worker.active = None;
+    worker.snapshot.status = Status::Ended;
+    worker.update();
+    assert_eq!(worker.snapshot.status, Status::Playing);
+    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(1));
+    worker
+        .queue_command(QueueAction::Configure {
+            shuffle: false,
+            repeat: crate::queue::Repeat::One,
+        })
+        .unwrap();
+    worker.active = None;
+    worker.snapshot.status = Status::Ended;
+    worker.update();
+    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(1));
+    assert_eq!(worker.snapshot.status, Status::Playing);
+    worker
+        .queue_command(QueueAction::Configure {
+            shuffle: false,
+            repeat: crate::queue::Repeat::Off,
+        })
+        .unwrap();
+    worker
+        .queue_command(QueueAction::Select { index: 2 })
+        .unwrap();
+    worker.active = None;
+    worker.snapshot.status = Status::Ended;
+    worker.update();
+    assert_eq!(worker.snapshot.status, Status::Ended);
+    assert!(!worker.queue_running);
+    assert!(worker.prefetch.is_none());
+}
+
+#[test]
+fn all_unavailable_playlist_terminates_and_cancellation_does_not_skip_tracks() {
+    let (mut worker, _) = worker();
+    let resolver = Arc::new(QueueResolver {
+        url: Url::parse("http://127.0.0.1:1/audio").unwrap(),
+        fail_mask: AtomicU64::new(u64::MAX),
+        calls: Default::default(),
+    });
+    worker.resolver = resolver.clone();
+    worker.queue = Some(test_queue(3, None));
+    worker
+        .queue
+        .as_mut()
+        .unwrap()
+        .order
+        .configure(false, crate::queue::Repeat::All, 1);
+    worker.play_queue(0).unwrap();
+    assert_eq!(worker.snapshot.status, Status::Error);
+    assert_eq!(worker.queue.as_ref().unwrap().skipped, 3);
+    assert_eq!(*resolver.calls.lock().unwrap(), vec![0, 1, 2]);
+    worker.update();
+    assert_eq!(resolver.calls.lock().unwrap().len(), 3);
+    worker.cancel.cancel();
+    assert!(worker.play_queue(0).unwrap_err().contains("cancelled"));
+    assert_eq!(worker.queue.as_ref().unwrap().skipped, 3);
+}
+
+#[test]
+fn previous_skips_unavailable_entries_backwards_and_restarts_at_the_beginning() {
+    let server =
+        super::super::http::tests::Server::new(std::fs::read(fixture("m4a")).unwrap(), "ok");
+    let (mut worker, _) = worker();
+    worker.resolver = Arc::new(QueueResolver {
+        url: server.url.clone(),
+        fail_mask: AtomicU64::new(0b10),
+        calls: Default::default(),
+    });
+    worker.queue = Some(test_queue(3, None));
+    worker.play_queue(2).unwrap();
+    let previous = worker
+        .command(Operation::Queue(QueueAction::Previous))
+        .unwrap();
+    assert_eq!(previous.queue.unwrap().current, Some(0));
+    assert_eq!(previous.status, Status::Playing);
+    let previous = worker
+        .command(Operation::Queue(QueueAction::Previous))
+        .unwrap();
+    assert_eq!(previous.queue.unwrap().current, Some(0));
+    assert_eq!(previous.status, Status::Playing);
 }

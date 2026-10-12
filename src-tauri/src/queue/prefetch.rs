@@ -57,3 +57,90 @@ impl Drop for Prefetch {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::resolver::{ResolveFuture, VideoMetadata};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Resolver {
+        active: AtomicUsize,
+        peak: AtomicUsize,
+        pending: bool,
+    }
+    struct Guard<'a>(&'a AtomicUsize);
+    impl Drop for Guard<'_> {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+    impl StreamResolver for Resolver {
+        fn resolve<'a>(&'a self, _: &'a Url) -> ResolveFuture<'a> {
+            Box::pin(async move {
+                let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+                let _guard = Guard(&self.active);
+                self.peak.fetch_max(active, Ordering::SeqCst);
+                if self.pending {
+                    std::future::pending::<()>().await;
+                }
+                Ok(ResolvedStream {
+                    media_url: Url::parse("https://example.com/audio").unwrap(),
+                    headers: Default::default(),
+                    format_id: "140".into(),
+                    extension: "m4a".into(),
+                    metadata: VideoMetadata {
+                        id: "BaW_jenozKc".into(),
+                        title: "Prefetched".into(),
+                        uploader: None,
+                        duration_seconds: None,
+                    },
+                })
+            })
+        }
+    }
+    #[test]
+    fn single_result_is_consumed_once_and_stale_results_are_discarded() {
+        let resolver = Arc::new(Resolver {
+            active: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            pending: false,
+        });
+        let token = CancellationToken::new();
+        let url = Url::parse("https://youtu.be/BaW_jenozKc").unwrap();
+        let mut prefetch = Prefetch::start(1, url.clone(), resolver.clone(), &token).unwrap();
+        prefetch.thread.take().unwrap().join().unwrap();
+        assert_eq!(prefetch.take_ready().unwrap().metadata.title, "Prefetched");
+        assert!(prefetch.take_ready().is_none());
+        let mut prefetch = Prefetch::start(2, url, resolver.clone(), &token).unwrap();
+        prefetch.thread.take().unwrap().join().unwrap();
+        prefetch.started = Instant::now() - Duration::from_secs(61);
+        assert!(prefetch.take_ready().is_none());
+        assert_eq!(resolver.peak.load(Ordering::SeqCst), 1);
+    }
+    #[test]
+    fn cancellation_reaps_pending_resolvers_before_replacement() {
+        let resolver = Arc::new(Resolver {
+            active: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
+            pending: true,
+        });
+        let token = CancellationToken::new();
+        let url = Url::parse("https://youtu.be/BaW_jenozKc").unwrap();
+        for _ in 0..10 {
+            let prefetch = Prefetch::start(1, url.clone(), resolver.clone(), &token).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while resolver.active.load(Ordering::SeqCst) == 0 {
+                assert!(Instant::now() < deadline);
+                std::thread::yield_now();
+            }
+            drop(prefetch);
+            assert_eq!(resolver.active.load(Ordering::SeqCst), 0);
+        }
+        assert_eq!(resolver.peak.load(Ordering::SeqCst), 1);
+        let prefetch = Prefetch::start(1, url, resolver.clone(), &token).unwrap();
+        token.cancel();
+        drop(prefetch);
+        assert_eq!(resolver.active.load(Ordering::SeqCst), 0);
+    }
+}

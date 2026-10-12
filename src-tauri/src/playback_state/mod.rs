@@ -26,6 +26,8 @@ pub enum PlaybackStatus {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlaybackSnapshot {
+    pub queue: Option<crate::queue::QueueSnapshot>,
+    pub queue_page: Option<crate::queue::QueuePage>,
     pub status: PlaybackStatus,
     pub path: Option<String>,
     pub metadata: Option<crate::resolver::VideoMetadata>,
@@ -39,6 +41,8 @@ pub struct PlaybackSnapshot {
 impl Default for PlaybackSnapshot {
     fn default() -> Self {
         Self {
+            queue: None,
+            queue_page: None,
             status: PlaybackStatus::Stopped,
             path: None,
             metadata: None,
