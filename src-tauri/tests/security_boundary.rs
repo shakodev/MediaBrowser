@@ -15,7 +15,7 @@ fn only_local_control_webviews_receive_command_permissions() {
         serde_json::json!(["controller", "browser-toolbar"])
     );
     let permissions = capability["permissions"].as_array().unwrap();
-    assert_eq!(permissions.len(), 6);
+    assert_eq!(permissions.len(), 7);
     for permission in permissions {
         assert!(matches!(
             permission.as_str().unwrap(),
@@ -25,6 +25,7 @@ fn only_local_control_webviews_receive_command_permissions() {
                 | "allow-open-browser"
                 | "allow-navigate-browser"
                 | "allow-browser-action"
+                | "allow-ram-saver"
         ));
     }
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();

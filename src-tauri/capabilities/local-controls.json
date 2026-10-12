@@ -10,6 +10,7 @@
     "allow-browser-snapshot",
     "allow-open-browser",
     "allow-navigate-browser",
-    "allow-browser-action"
+    "allow-browser-action",
+    "allow-ram-saver"
   ]
 }

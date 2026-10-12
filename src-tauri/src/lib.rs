@@ -22,6 +22,7 @@ pub fn run() {
             browser::open_browser,
             browser::navigate_browser,
             browser::browser_action,
+            browser::handoff::ram_saver,
             audio::commands::audio_load,
             audio::commands::audio_load_youtube,
             audio::commands::audio_play,

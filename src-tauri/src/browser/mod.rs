@@ -1,3 +1,5 @@
+pub(crate) mod handoff;
+mod media;
 mod native;
 mod state;
 mod url_policy;
@@ -60,10 +62,15 @@ impl Drop for OpeningGuard<'_> {
 #[tauri::command]
 pub async fn open_browser(webview: Webview, app: AppHandle) -> Result<(), String> {
     authorize(&webview)?;
-    open(&app).await
+    let state = app.state::<BrowserState>();
+    let _guard = state
+        .transition
+        .try_write()
+        .map_err(|_| "A playback operation is already in progress.")?;
+    handoff::return_to_browser(&app).await
 }
 
-async fn open(app: &AppHandle) -> Result<(), String> {
+async fn open(app: &AppHandle, destination: Option<url::Url>) -> Result<(), String> {
     let state = app.state::<BrowserState>();
     if state
         .opening
@@ -85,7 +92,7 @@ async fn open(app: &AppHandle) -> Result<(), String> {
         .theme(Some(tauri::Theme::Dark))
         .build()
         .map_err(|e| e.to_string())?;
-    let result = build_views(app, &window).await;
+    let result = build_views(app, &window, destination).await;
     if let Err(error) = result {
         let _ = window.close();
         return Err(error);
@@ -116,7 +123,11 @@ async fn open(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-async fn build_views(app: &AppHandle, window: &Window) -> Result<(), String> {
+async fn build_views(
+    app: &AppHandle,
+    window: &Window,
+    destination: Option<url::Url>,
+) -> Result<(), String> {
     window
         .add_child(
             WebviewBuilder::new(
@@ -156,7 +167,11 @@ async fn build_views(app: &AppHandle, window: &Window) -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     native::attach(&remote, app.clone()).await?;
-    let url = address_or_search(&app.state::<BrowserState>().get().last_youtube_url)?;
+    native::set_muted(&remote, destination.is_some()).await?;
+    let url = match destination {
+        Some(url) => url,
+        None => address_or_search(&app.state::<BrowserState>().get().last_youtube_url)?,
+    };
     remote.navigate(url).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -186,7 +201,12 @@ pub async fn navigate_browser(
 ) -> Result<(), String> {
     authorize(&webview)?;
     let url = address_or_search(&input)?;
-    open(&app).await?;
+    let state = app.state::<BrowserState>();
+    let _guard = state
+        .transition
+        .try_write()
+        .map_err(|_| "A playback operation is already in progress.")?;
+    handoff::return_to_browser(&app).await?;
     app.get_webview("youtube")
         .ok_or("Open the browser first.")?
         .navigate(url)
@@ -200,6 +220,11 @@ pub async fn browser_action(
     action: BrowserAction,
 ) -> Result<(), String> {
     authorize(&webview)?;
+    let state = app.state::<BrowserState>();
+    let _guard = state
+        .transition
+        .try_write()
+        .map_err(|_| "A playback operation is already in progress.")?;
     let remote = app
         .get_webview("youtube")
         .ok_or("Open the browser first.")?;

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ram-saver"
+description = "Enables the ram_saver command without any pre-configured scope."
+commands.allow = ["ram_saver"]
+
+[[permission]]
+identifier = "deny-ram-saver"
+description = "Denies the ram_saver command without any pre-configured scope."
+commands.deny = ["ram_saver"]

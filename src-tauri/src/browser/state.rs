@@ -11,6 +11,8 @@ use super::url_policy::{is_browser_url, is_youtube_page, HOME};
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserSnapshot {
+    pub mode: crate::playback_state::PlaybackMode,
+    pub switching: bool,
     pub current_url: String,
     pub last_youtube_url: String,
     pub title: String,
@@ -27,6 +29,7 @@ struct SavedPage {
 }
 
 pub struct BrowserState {
+    pub transition: std::sync::Arc<tokio::sync::RwLock<()>>,
     pub snapshot: Mutex<BrowserSnapshot>,
     pub opening: AtomicBool,
     path: PathBuf,
@@ -43,7 +46,10 @@ impl BrowserState {
             .map(|url| url.to_string())
             .unwrap_or_else(|| HOME.to_owned());
         Self {
+            transition: std::sync::Arc::new(tokio::sync::RwLock::new(())),
             snapshot: Mutex::new(BrowserSnapshot {
+                mode: crate::playback_state::PlaybackMode::Browser,
+                switching: false,
                 current_url: restored.clone(),
                 last_youtube_url: restored,
                 title: "YouTube".into(),

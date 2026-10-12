@@ -6,6 +6,7 @@ fn main() {
             "open_browser",
             "navigate_browser",
             "browser_action",
+            "ram_saver",
             "audio_load",
             "audio_load_youtube",
             "audio_play",

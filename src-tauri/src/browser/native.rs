@@ -11,9 +11,27 @@ use webview2_com::{
     },
     NavigationCompletedEventHandler, NavigationStartingEventHandler, SourceChangedEventHandler,
 };
+use windows::core::Interface;
 use windows::core::{BOOL, PWSTR};
 
 use super::{publish, BrowserAction, BrowserState};
+
+pub async fn set_muted(webview: &Webview, muted: bool) -> Result<(), String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    webview
+        .with_webview(move |platform| {
+            // SAFETY: Tauri dispatches to the owning UI thread; no COM handle escapes.
+            let result = unsafe {
+                platform.controller().CoreWebView2().and_then(|core| {
+                    core.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_8>()?
+                        .SetIsMuted(muted)
+                })
+            };
+            let _ = sender.send(result.map_err(|e| e.to_string()));
+        })
+        .map_err(|e| e.to_string())?;
+    receiver.await.map_err(|e| e.to_string())?
+}
 
 fn refresh(app: &AppHandle, core: &ICoreWebView2) -> windows::core::Result<()> {
     let mut source = PWSTR::null();
