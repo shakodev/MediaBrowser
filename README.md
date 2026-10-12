@@ -25,10 +25,12 @@ The executable is `src-tauri/target/release/media-browser.exe`. Installer packag
 - Separate Windows browser with address/search bar, back, forward, reload, and home controls.
 - Native WebView2 `SourceChanged`, `HistoryChanged`, and title events track both document navigation and YouTube SPA changes. No injected YouTube tracking script or polling loop is required.
 - Last committed YouTube URL is atomically saved under `%APPDATA%/com.mediabrowser.desktop/browser-state.json` and restored when the browser is next opened. Consent and sign-in URLs never replace the saved YouTube URL.
-- Closing the browser releases its views; reopening restores the saved page. Closing the controller exits the application.
+- Closing either window destroys its views and leaves the native tray available. Use tray **Quit** to terminate the app.
 - Local MP3, AAC (ADTS), and AAC-LC M4A playback through a custom Rust engine. Paste a file path into **Local playback**, load it, then use Play/Pause/Stop, volume, the position slider, or a seek time in seconds. Quoted Windows paths are accepted.
 - YouTube playlist playback with automatic advancement, previous/next, track selection, shuffle, repeat off/all/one, and a paged track list with current-track metadata.
 - RAM Saver buttons in the controller and browser toolbar hand the current public video or playlist track to the Rust engine. Browser Mode restores the current audio track and position.
+- RAM Saver destroys every WebView window. A native Windows tray provides play/pause, next/previous, volume, browser reopening and clean Quit; Windows media keys use SMTC.
+- Playback checkpoints restore RAM Saver paused without starting WebView2. See [tray lifecycle, persistence, benchmark instructions and limitations](docs/ram-saver.md).
 
 ## RAM Saver handoff
 
@@ -38,11 +40,11 @@ For a playlist, yt-dlp extracts public flat metadata into the existing disk-back
 
 Resolution runs while browser playback continues. A fresh capture then rechecks identity and timestamp. The Rust engine seeks and starts muted, with queue advancement suspended. The transfer requires its device-timed playback clock to advance before pausing YouTube, applying volume and closing the remote WebView2 view and browser window. Paused browser playback stays paused after this output check. Navigation, seeks or playback changes during preparation, resolver/network/decoder/device failures, or a failed confirmation leave Browser Mode active and show an error. A failed commit pauses Rust and resumes browser media if the transfer paused it.
 
-Click **Browser Mode**, **Return to Browser Mode**, or the session's open button to restore the current Rust track, public playlist, original index, position, volume and paused state. This uses the current queue entry, including tracks reached with Next/Previous or automatic advancement. The new WebView2 is muted at the native level during restoration, including any ads. Rust continues playing until YouTube confirms the target video, seek and playback progress; only then is Rust paused and the browser unmuted. On failure the new browser is closed and Rust remains available. A stopped or paused Rust track restores paused. Replacing audio with a local file restores the remembered browser page instead.
+Choose **Reopen browser** from the tray (or double-click it) to restore the current Rust track, public playlist, original index, position, volume and paused state. This uses the current queue entry, including tracks reached with Next/Previous or automatic advancement. The new WebView2 is muted at the native level during restoration, including any ads. Rust continues playing until YouTube confirms the target video, seek and playback progress; only then is Rust paused and the browser unmuted. On failure the new browser is closed and Rust remains available. A stopped or paused Rust track restores paused. Replacing audio with a local file restores the remembered browser page instead.
 
-MVP limitations: only publicly resolvable, non-live videos and playlists supported by the existing AAC/M4A engine; no authenticated extraction, internal autoplay queue, YouTube shuffle/repeat synchronization, seamless/gapless switching, or cross-launch playback/queue persistence. YouTube DOM/player changes, consent, ads, autoplay restrictions, changed playlists and slow seeks can prevent a transfer; the current source remains available for retry. Position checks allow up to two seconds of startup drift. Closing the remote view releases that view; WebView2 may retain shared runtime processes, so no fixed RAM reduction is claimed.
+MVP limitations: only publicly resolvable, non-live videos and playlists supported by the existing AAC/M4A engine; no authenticated extraction, internal autoplay queue, YouTube shuffle/repeat synchronization, or seamless/gapless switching. YouTube DOM/player changes, consent, ads, autoplay restrictions, changed playlists and slow seeks can prevent a transfer; the current source remains available for retry. Position checks allow up to two seconds of startup drift. Checkpoints retain track/playlist context and shuffle/repeat preferences, but playlist contents and shuffle order are rebuilt on restart.
 
-Automated checks cover capture and SPA races, ads/unsupported pages, playback-context validation, duplicate/shifted playlist indexes, muted startup and timestamped PCM output, output confirmation, restoration state and local-only ACLs. A live Windows/YouTube round-trip handoff has not yet been manually verified.
+Automated checks cover capture and SPA races, ads/unsupported pages, playback-context validation, duplicate/shifted playlist indexes, muted startup and timestamped PCM output, output confirmation, restoration state and local-only ACLs. The release benchmark verifies live Windows/YouTube round-trip handoff, zero retained WebViews, native playback progress and process-tree exit.
 
 ## Playlists
 
@@ -54,7 +56,7 @@ Rust and the UI retain at most one page of 40 tracks per snapshot. Shuffle compu
 
 Signed audio URLs remain in Rust. Only the current track and one cancellable next-track resolution are retained; prefetch downloads no audio. Prefetched results expire after 60 seconds and are resolved again on demand. Queue changes, pause, stop, seek, replacement and shutdown cancel or discard speculative work. Existing HTTP URL refresh handles rejected/expired playback URLs.
 
-Unavailable entries and resolution/decoding failures are marked and skipped in the requested direction. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. Queue persistence is outside this stage; RAM Saver uses this same queue.
+Unavailable entries and resolution/decoding failures are marked and skipped in the requested direction. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. RAM Saver uses this same queue and checkpoints its public source, current occurrence and playback preferences.
 
 Metadata-only live verification (no audio resolution or playback):
 
@@ -90,7 +92,7 @@ Rust callers can clone `AudioEngine` and await `load(path)`, `play()`, `pause()`
 
 This stage supports mono/stereo MP3 and AAC-LC in ADTS or ISO/MP4 containers. HE-AAC, ALAC, DRM, and multichannel source audio are unsupported. AAC encoder priming/padding and MP4 edit-list handling depend on Symphonia. Duration can be unknown or estimated for raw AAC or MP3 without timing metadata; the final decoded duration is available at EOF. The numeric seek control works when duration is unknown. Linear resampling maintains continuous timing across packets but is not a band-limited quality resampler. Position accuracy depends on the device driver's timestamps; seeks/pause can have short device restart latency.
 
-RAM Saver coordinates browser and engine playback as described above. Media keys are outside this stage. Direct audio-load controls remain available independently; use RAM Saver when transferring browser playback. There is no MPV, FFmpeg, Electron, or external audio player.
+RAM Saver coordinates browser and engine playback as described above. Windows SMTC routes media keys to the native engine while in RAM Saver. Direct audio-load controls remain available independently; use RAM Saver when transferring browser playback. There is no MPV, FFmpeg, Electron, or external audio player.
 
 ## YouTube audio streams
 
@@ -141,4 +143,4 @@ For live browser verification, open YouTube, search in both the toolbar and YouT
 
 The preceding Browser Mode stage was verified on Windows on 12 October 2026: live checks passed for toolbar search, YouTube's own SPA search and result navigation, synchronized controller/toolbar URLs, back/forward/reload/home, rejection of `file:` addresses, browser close/reopen restoration, and controller exit closing both windows. That stage's 3.1 MiB standalone release executable also launched and restored the saved YouTube search page using bundled local controls.
 
-WebView2 and YouTube determine browser-process memory use; no RAM reduction target is claimed yet. Installer distribution remains outside this stage.
+Measured process-tree private memory and the reproducible release benchmark are documented in [RAM Saver](docs/ram-saver.md). Installer distribution remains outside this stage.

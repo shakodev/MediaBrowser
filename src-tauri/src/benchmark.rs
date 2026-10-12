@@ -125,8 +125,10 @@ async fn run(app: &AppHandle) -> Result<(), String> {
     browser::handoff::enter_ram_saver(app).await?;
     sample(app, "ram-saver-1", true).await?;
     // Isolate the old controller-only design's retained browser-process cost.
+    phase(app, "opening-controller", serde_json::Value::Null)?;
     desktop::open_controller(app)?;
     sample(app, "controller-only", true).await?;
+    phase(app, "closing-controller", serde_json::Value::Null)?;
     desktop::destroy_ui(app)?;
     sample(app, "ram-saver-2", true).await?;
     phase(app, "transport-checks", serde_json::Value::Null)?;

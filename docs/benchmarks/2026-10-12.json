@@ -1,0 +1,719 @@
+{
+  "date": "2026-10-12",
+  "codeRevision": "58f7fa2",
+  "build": "release, memory-benchmark feature",
+  "os": "Windows 11 build 26200",
+  "cpu": "AMD Ryzen 5 2600X, 12 logical processors",
+  "webview2": "154.0.4258.62",
+  "rust": "1.97.1",
+  "ytDlp": "2026.08.19",
+  "deno": "2.9.7",
+  "video": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+  "metric": "Recursive process-tree private committed memory, MiB (Win32_Process.PrivatePageCount)",
+  "steadySeconds": 15,
+  "settlingSeconds": 8,
+  "mainSummary": [
+    {
+      "Phase": "browser",
+      "Samples": 19,
+      "MedianPrivateMiB": 630.668,
+      "MinPrivateMiB": 628.895,
+      "MaxPrivateMiB": 685.57,
+      "MaxProcesses": 11.0
+    },
+    {
+      "Phase": "browser-reopened",
+      "Samples": 18,
+      "MedianPrivateMiB": 637.156,
+      "MinPrivateMiB": 635.0,
+      "MaxPrivateMiB": 671.621,
+      "MaxProcesses": 11.0
+    },
+    {
+      "Phase": "complete",
+      "Samples": 1,
+      "MedianPrivateMiB": 0.0,
+      "MinPrivateMiB": 0.0,
+      "MaxPrivateMiB": 0.0,
+      "MaxProcesses": 0.0
+    },
+    {
+      "Phase": "controller-only",
+      "Samples": 20,
+      "MedianPrivateMiB": 139.09,
+      "MinPrivateMiB": 139.043,
+      "MaxPrivateMiB": 139.164,
+      "MaxProcesses": 7.0
+    },
+    {
+      "Phase": "handoff",
+      "Samples": 9,
+      "MedianPrivateMiB": 633.586,
+      "MinPrivateMiB": 561.211,
+      "MaxPrivateMiB": 663.164,
+      "MaxProcesses": 14.0
+    },
+    {
+      "Phase": "handoff-2",
+      "Samples": 8,
+      "MedianPrivateMiB": 643.115,
+      "MinPrivateMiB": 561.66,
+      "MaxPrivateMiB": 686.355,
+      "MaxProcesses": 14.0
+    },
+    {
+      "Phase": "last-window-check",
+      "Samples": 3,
+      "MedianPrivateMiB": 8.574,
+      "MinPrivateMiB": 8.574,
+      "MaxPrivateMiB": 8.574,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "media-session-verified",
+      "Samples": 1,
+      "MedianPrivateMiB": 7.594,
+      "MinPrivateMiB": 7.594,
+      "MaxPrivateMiB": 7.594,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "ram-saver-1",
+      "Samples": 21,
+      "MedianPrivateMiB": 7.941,
+      "MinPrivateMiB": 7.934,
+      "MaxPrivateMiB": 23.91,
+      "MaxProcesses": 5.0
+    },
+    {
+      "Phase": "ram-saver-2",
+      "Samples": 20,
+      "MedianPrivateMiB": 7.859,
+      "MinPrivateMiB": 7.844,
+      "MaxPrivateMiB": 7.938,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "ram-saver-3",
+      "Samples": 21,
+      "MedianPrivateMiB": 8.574,
+      "MinPrivateMiB": 8.531,
+      "MaxPrivateMiB": 8.625,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "reopening",
+      "Samples": 4,
+      "MedianPrivateMiB": 189.896,
+      "MinPrivateMiB": 9.871,
+      "MaxPrivateMiB": 383.633,
+      "MaxProcesses": 11.0
+    },
+    {
+      "Phase": "settling",
+      "Samples": 63,
+      "MedianPrivateMiB": 8.625,
+      "MinPrivateMiB": 7.93,
+      "MaxPrivateMiB": 775.785,
+      "MaxProcesses": 12.0
+    },
+    {
+      "Phase": "starting",
+      "Samples": 2,
+      "MedianPrivateMiB": 134.805,
+      "MinPrivateMiB": 16.188,
+      "MaxPrivateMiB": 253.422,
+      "MaxProcesses": 9.0
+    },
+    {
+      "Phase": "transport-checks",
+      "Samples": 1,
+      "MedianPrivateMiB": 7.402,
+      "MinPrivateMiB": 7.402,
+      "MaxPrivateMiB": 7.402,
+      "MaxProcesses": 1.0
+    }
+  ],
+  "restartSummary": [
+    {
+      "Phase": "complete",
+      "Samples": 1,
+      "MedianPrivateMiB": 0.0,
+      "MinPrivateMiB": 0.0,
+      "MaxPrivateMiB": 0.0,
+      "MaxProcesses": 0.0
+    },
+    {
+      "Phase": "ram-saver-restart",
+      "Samples": 23,
+      "MedianPrivateMiB": 6.453,
+      "MinPrivateMiB": 6.395,
+      "MaxPrivateMiB": 6.688,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "restored-checkpoint",
+      "Samples": 1,
+      "MedianPrivateMiB": 5.117,
+      "MinPrivateMiB": 5.117,
+      "MaxPrivateMiB": 5.117,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "settling",
+      "Samples": 11,
+      "MedianPrivateMiB": 6.41,
+      "MinPrivateMiB": 6.379,
+      "MaxPrivateMiB": 6.41,
+      "MaxProcesses": 1.0
+    },
+    {
+      "Phase": "starting",
+      "Samples": 7,
+      "MedianPrivateMiB": 42.07,
+      "MinPrivateMiB": 6.5,
+      "MaxPrivateMiB": 57.824,
+      "MaxProcesses": 5.0
+    }
+  ],
+  "mainLifecycle": [
+    {
+      "detail": null,
+      "phase": "starting",
+      "pid": 20208,
+      "webviews": [
+        "controller"
+      ],
+      "windows": [
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "next": "browser"
+      },
+      "phase": "settling",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": null,
+          "error": null,
+          "metadata": null,
+          "path": null,
+          "positionSeconds": 0.0,
+          "queue": null,
+          "queuePage": null,
+          "status": "stopped",
+          "transfer": null,
+          "volume": 1.0
+        },
+        "browser": {
+          "paused": false,
+          "playlistId": null,
+          "playlistIndex": null,
+          "positionSeconds": 17.901997,
+          "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "videoId": "aqz-KE-bpKQ",
+          "volume": 0.15000000596046448
+        }
+      },
+      "phase": "browser",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": null,
+      "phase": "handoff",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "next": "ram-saver-1"
+      },
+      "phase": "settling",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": 634.6245804988662,
+          "error": null,
+          "metadata": {
+            "durationSeconds": 635.0,
+            "id": "aqz-KE-bpKQ",
+            "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+            "uploader": "Blender"
+          },
+          "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "positionSeconds": 49.39319930907029,
+          "queue": null,
+          "queuePage": null,
+          "status": "playing",
+          "transfer": {
+            "bufferLimitBytes": 131072,
+            "bytesReceived": 917504,
+            "rangeRequests": 7,
+            "totalBytes": 10271496,
+            "urlRefreshes": 0
+          },
+          "volume": 0.15000000596046448
+        },
+        "browser": null
+      },
+      "phase": "ram-saver-1",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "next": "controller-only"
+      },
+      "phase": "settling",
+      "pid": 20208,
+      "webviews": [
+        "controller"
+      ],
+      "windows": [
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": 634.6245804988662,
+          "error": null,
+          "metadata": {
+            "durationSeconds": 635.0,
+            "id": "aqz-KE-bpKQ",
+            "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+            "uploader": "Blender"
+          },
+          "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "positionSeconds": 73.14005530907029,
+          "queue": null,
+          "queuePage": null,
+          "status": "playing",
+          "transfer": {
+            "bufferLimitBytes": 131072,
+            "bytesReceived": 1310720,
+            "rangeRequests": 10,
+            "totalBytes": 10271496,
+            "urlRefreshes": 0
+          },
+          "volume": 0.15000000596046448
+        },
+        "browser": null
+      },
+      "phase": "controller-only",
+      "pid": 20208,
+      "webviews": [
+        "controller"
+      ],
+      "windows": [
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "next": "ram-saver-2"
+      },
+      "phase": "settling",
+      "pid": 20208,
+      "webviews": [
+        "controller"
+      ],
+      "windows": [
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": 634.6245804988662,
+          "error": null,
+          "metadata": {
+            "durationSeconds": 635.0,
+            "id": "aqz-KE-bpKQ",
+            "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+            "uploader": "Blender"
+          },
+          "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "positionSeconds": 96.1630935090703,
+          "queue": null,
+          "queuePage": null,
+          "status": "playing",
+          "transfer": {
+            "bufferLimitBytes": 131072,
+            "bytesReceived": 1703936,
+            "rangeRequests": 13,
+            "totalBytes": 10271496,
+            "urlRefreshes": 0
+          },
+          "volume": 0.15000000596046448
+        },
+        "browser": null
+      },
+      "phase": "ram-saver-2",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": null,
+      "phase": "transport-checks",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "pause": true,
+        "play": true,
+        "session": "media-browser.exe"
+      },
+      "phase": "media-session-verified",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": null,
+      "phase": "reopening",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "next": "browser-reopened"
+      },
+      "phase": "settling",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": 634.6245804988662,
+          "error": null,
+          "metadata": {
+            "durationSeconds": 635.0,
+            "id": "aqz-KE-bpKQ",
+            "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+            "uploader": "Blender"
+          },
+          "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "positionSeconds": 114.58452834172337,
+          "queue": null,
+          "queuePage": null,
+          "status": "paused",
+          "transfer": {
+            "bufferLimitBytes": 131072,
+            "bytesReceived": 5242880,
+            "rangeRequests": 40,
+            "totalBytes": 10271496,
+            "urlRefreshes": 0
+          },
+          "volume": 0.25
+        },
+        "browser": {
+          "paused": false,
+          "playlistId": null,
+          "playlistIndex": null,
+          "positionSeconds": 122.43714,
+          "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ&t=111s",
+          "videoId": "aqz-KE-bpKQ",
+          "volume": 0.25
+        }
+      },
+      "phase": "browser-reopened",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": null,
+      "phase": "handoff-2",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "next": "ram-saver-3"
+      },
+      "phase": "settling",
+      "pid": 20208,
+      "webviews": [
+        "youtube",
+        "browser-toolbar",
+        "controller"
+      ],
+      "windows": [
+        "browser",
+        "media-session",
+        "controller"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": 634.6245804988662,
+          "error": null,
+          "metadata": {
+            "durationSeconds": 635.0,
+            "id": "aqz-KE-bpKQ",
+            "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+            "uploader": "Blender"
+          },
+          "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "positionSeconds": 152.1090037489796,
+          "queue": null,
+          "queuePage": null,
+          "status": "playing",
+          "transfer": {
+            "bufferLimitBytes": 131072,
+            "bytesReceived": 2359296,
+            "rangeRequests": 18,
+            "totalBytes": 10271496,
+            "urlRefreshes": 0
+          },
+          "volume": 0.25
+        },
+        "browser": null
+      },
+      "phase": "ram-saver-3",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": null,
+      "phase": "last-window-check",
+      "pid": 20208,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": null,
+      "phase": "last-window-verified",
+      "pid": 20208,
+      "webviews": [],
+      "windows": []
+    },
+    {
+      "detail": {
+        "success": true
+      },
+      "phase": "complete",
+      "pid": 20208,
+      "webviews": [],
+      "windows": []
+    }
+  ],
+  "restartLifecycle": [
+    {
+      "detail": null,
+      "phase": "starting",
+      "pid": 17016,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "durationSeconds": 634.6245804988662,
+        "error": null,
+        "metadata": {
+          "durationSeconds": 635.0,
+          "id": "aqz-KE-bpKQ",
+          "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+          "uploader": "Blender"
+        },
+        "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+        "positionSeconds": 169.14589884897958,
+        "queue": null,
+        "queuePage": null,
+        "status": "paused",
+        "transfer": {
+          "bufferLimitBytes": 131072,
+          "bytesReceived": 2359296,
+          "rangeRequests": 18,
+          "totalBytes": 10271496,
+          "urlRefreshes": 0
+        },
+        "volume": 0.25
+      },
+      "phase": "restored-checkpoint",
+      "pid": 17016,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "next": "ram-saver-restart"
+      },
+      "phase": "settling",
+      "pid": 17016,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "audio": {
+          "durationSeconds": 634.6245804988662,
+          "error": null,
+          "metadata": {
+            "durationSeconds": 635.0,
+            "id": "aqz-KE-bpKQ",
+            "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+            "uploader": "Blender"
+          },
+          "path": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+          "positionSeconds": 177.16349846734695,
+          "queue": null,
+          "queuePage": null,
+          "status": "playing",
+          "transfer": {
+            "bufferLimitBytes": 131072,
+            "bytesReceived": 4849664,
+            "rangeRequests": 37,
+            "totalBytes": 10271496,
+            "urlRefreshes": 0
+          },
+          "volume": 0.25
+        },
+        "browser": null
+      },
+      "phase": "ram-saver-restart",
+      "pid": 17016,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "pause": true,
+        "play": true,
+        "session": "media-browser.exe"
+      },
+      "phase": "media-session-verified",
+      "pid": 17016,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    },
+    {
+      "detail": {
+        "success": true
+      },
+      "phase": "complete",
+      "pid": 17016,
+      "webviews": [],
+      "windows": [
+        "media-session"
+      ]
+    }
+  ],
+  "mainExited": true,
+  "mainRemainingDescendants": [],
+  "restartExited": true,
+  "restartRemainingDescendants": [],
+  "notes": [
+    "One final ram-saver-1 sample at 58.093 seconds includes the next controller-opening transition: four new WebView2 descendants and 23.910 MiB total. This peak is preserved, not discarded. The probe now marks opening/closing-controller before those operations.",
+    "Raw CSV files are retained locally in .verification/memory-verified and .verification/memory-resume-verified.",
+    "Windows media-session Play/Pause were exercised through GSMTC. Hardware key presses and physical listening were not manually checked."
+  ]
+}
