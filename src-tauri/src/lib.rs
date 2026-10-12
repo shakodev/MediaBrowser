@@ -9,6 +9,15 @@ pub mod resolver;
 use tauri::Manager;
 
 pub fn run() {
+    // Orchestration is light IO work. Decode/CPAL and synchronous HTTP bridges
+    // already own dedicated threads; a CPU-count-sized Tokio pool wastes RAM.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .thread_name("app-async")
+        .enable_all()
+        .build()
+        .expect("failed to start app runtime");
+    tauri::async_runtime::set(runtime.handle().clone());
     tauri::Builder::default()
         .setup(|app| {
             let state_path = desktop::data_dir(app.handle())?.join("browser-state.json");

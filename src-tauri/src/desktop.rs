@@ -30,6 +30,7 @@ pub(crate) struct Desktop {
     toggle: MenuItem<tauri::Wry>,
     next: MenuItem<tauri::Wry>,
     previous: MenuItem<tauri::Wry>,
+    actions: tokio::sync::mpsc::Sender<Action>,
 }
 
 #[derive(Clone, Copy)]
@@ -95,11 +96,12 @@ pub(crate) fn destroy_ui(app: &AppHandle) -> Result<(), String> {
 }
 
 pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let status = MenuItem::with_id(app, "status", "MediaBrowser Â· Ready", false, None::<&str>)?;
+    let (actions, mut pending_actions) = tokio::sync::mpsc::channel(16);
+    let status = MenuItem::with_id(app, "status", "MediaBrowser · Ready", false, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Play / Pause", false, None::<&str>)?;
     let next = MenuItem::with_id(app, "next", "Next", false, None::<&str>)?;
     let previous = MenuItem::with_id(app, "previous", "Previous", false, None::<&str>)?;
-    let down = MenuItem::with_id(app, "volume-down", "Volume âˆ’10%", true, None::<&str>)?;
+    let down = MenuItem::with_id(app, "volume-down", "Volume −10%", true, None::<&str>)?;
     let up = MenuItem::with_id(app, "volume-up", "Volume +10%", true, None::<&str>)?;
     let reopen = MenuItem::with_id(app, "reopen", "Reopen browser", true, None::<&str>)?;
     let saver = MenuItem::with_id(
@@ -127,6 +129,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
         toggle,
         next,
         previous,
+        actions,
     });
     TrayIconBuilder::with_id("player")
         .icon(
@@ -134,7 +137,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
                 .ok_or("Missing tray icon")?
                 .clone(),
         )
-        .tooltip("MediaBrowser Â· playback continues in the tray")
+        .tooltip("MediaBrowser · playback continues in the tray")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| {
@@ -157,7 +160,14 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
             }
         })
         .build(app)?;
-    open_controller(app.handle())?;
+    let saved_saver = SavedPlayback::load(&app.state::<Desktop>().path)
+        .ok()
+        .flatten()
+        .is_some_and(|s| s.mode == PlaybackMode::RamSaver);
+    // A saved tray-only session must not create WebView2 just to tear it down.
+    if !saved_saver {
+        open_controller(app.handle())?;
+    }
     // A plain native HWND hosts SMTC; it contains no WebView or browser runtime.
     match crate::media_keys::setup(app.handle()) {
         Ok(controls) => {
@@ -169,9 +179,24 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
         ),
     }
     let handle = app.handle().clone();
+    let command_handle = handle.clone();
+    tauri::async_runtime::spawn(async move {
+        let stop = command_handle.state::<Desktop>().stop.clone();
+        loop {
+            let action = tokio::select! {
+                biased;
+                _ = stop.cancelled() => break,
+                action = pending_actions.recv() => match action { Some(action) => action, None => break },
+            };
+            if let Err(error) = perform(&command_handle, action).await {
+                report(&command_handle, &error);
+            }
+        }
+    });
     tauri::async_runtime::spawn(async move {
         if let Err(error) = restore_checkpoint(&handle).await {
             report(&handle, &error);
+            let _ = open_controller(&handle);
         }
         let stop = handle.state::<Desktop>().stop.clone();
         let mut tick = 0u32;
@@ -225,12 +250,11 @@ pub(crate) fn dispatch(app: &AppHandle, action: Action) {
     if is_quitting(app) {
         return;
     }
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(error) = perform(&app, action).await {
-            report(&app, &error);
-        }
-    });
+    // Rapid media-key events are ordered and bounded. They must not disappear
+    // because the previous key is still saving its checkpoint or updating SMTC.
+    if app.state::<Desktop>().actions.try_send(action).is_err() {
+        report(app, "Playback controls are busy; retry shortly.");
+    }
 }
 
 pub(crate) async fn perform(app: &AppHandle, action: Action) -> Result<(), String> {
@@ -241,10 +265,7 @@ pub(crate) async fn perform(app: &AppHandle, action: Action) -> Result<(), Strin
         _ => {}
     }
     let browser = app.state::<BrowserState>();
-    let _guard = browser
-        .transition
-        .try_write()
-        .map_err(|_| "A playback operation is already in progress.")?;
+    let _guard = browser.transition.write().await;
     if is_quitting(app) {
         return Ok(());
     }
@@ -266,9 +287,9 @@ pub(crate) async fn perform(app: &AppHandle, action: Action) -> Result<(), Strin
         }
         _ => unreachable!(),
     };
-    checkpoint_audio(app, &snapshot).await?;
     browser.update(|s| s.error = None);
     update_controls(app, &snapshot);
+    checkpoint_audio(app, &snapshot).await?;
     Ok(())
 }
 
@@ -300,7 +321,7 @@ fn update_controls(app: &AppHandle, snapshot: &PlaybackSnapshot) {
             .as_ref()
             .map_or("MediaBrowser", |m| m.title.as_str());
         let _ = state.status.set_text(format!(
-            "{} Â· {:?} Â· {:.0}%",
+            "{} · {:?} · {:.0}%",
             title.chars().take(60).collect::<String>(),
             snapshot.status,
             snapshot.volume * 100.0
