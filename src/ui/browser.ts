@@ -1,4 +1,9 @@
-import { browserAction, errorMessage, navigate, watchBrowser } from "../api/browser";
+import {
+  browserAction,
+  errorMessage,
+  navigate,
+  watchBrowser,
+} from "../api/browser";
 import { icon } from "./icons";
 
 export function mountBrowser(root: HTMLDivElement): void {
@@ -14,25 +19,48 @@ export function mountBrowser(root: HTMLDivElement): void {
   async function perform(action: () => Promise<void>): Promise<void> {
     if (busy) return;
     busy = true;
-    try { await action(); } catch (error) { message.textContent = errorMessage(error); }
-    finally { busy = false; }
+    try {
+      await action();
+    } catch (error) {
+      message.textContent = errorMessage(error);
+    } finally {
+      busy = false;
+    }
   }
   for (const action of ["back", "forward", "reload"] as const) {
-    root.querySelector(`#${action}`)!.addEventListener("click", () => void perform(() => browserAction(action)));
+    root
+      .querySelector(`#${action}`)!
+      .addEventListener(
+        "click",
+        () => void perform(() => browserAction(action)),
+      );
   }
-  root.querySelector("#home")!.addEventListener("click", () => void perform(() => navigate("https://www.youtube.com/")));
-  root.querySelector<HTMLFormElement>("#address-form")!.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const input = address.value;
-    address.blur();
-    void perform(() => navigate(input));
-  });
+  root
+    .querySelector("#home")!
+    .addEventListener(
+      "click",
+      () => void perform(() => navigate("https://www.youtube.com/")),
+    );
+  root
+    .querySelector<HTMLFormElement>("#address-form")!
+    .addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = address.value;
+      address.blur();
+      void perform(() => navigate(input));
+    });
   address.addEventListener("focus", () => address.select());
   address.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { address.value = currentUrl; address.blur(); }
+    if (event.key === "Escape") {
+      address.value = currentUrl;
+      address.blur();
+    }
   });
   document.addEventListener("keydown", (event) => {
-    if (event.ctrlKey && event.key.toLowerCase() === "l") { event.preventDefault(); address.focus(); }
+    if (event.ctrlKey && event.key.toLowerCase() === "l") {
+      event.preventDefault();
+      address.focus();
+    }
   });
   void watchBrowser((state) => {
     currentUrl = state.currentUrl;
@@ -40,7 +68,10 @@ export function mountBrowser(root: HTMLDivElement): void {
     back.disabled = !state.canGoBack;
     forward.disabled = !state.canGoForward;
     root.querySelector("#load-dot")!.classList.toggle("loading", state.loading);
-    message.textContent = state.error ?? (state.loading ? "Loading…" : state.title || "YouTube");
+    message.textContent =
+      state.error ?? (state.loading ? "Loading…" : state.title || "YouTube");
     message.classList.toggle("has-error", Boolean(state.error));
-  }).catch((error) => { message.textContent = errorMessage(error); });
+  }).catch((error) => {
+    message.textContent = errorMessage(error);
+  });
 }

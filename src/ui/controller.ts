@@ -1,4 +1,9 @@
-import { errorMessage, navigate, openBrowser, watchBrowser } from "../api/browser";
+import {
+  errorMessage,
+  navigate,
+  openBrowser,
+  watchBrowser,
+} from "../api/browser";
 import { icon } from "./icons";
 
 export function mountController(root: HTMLDivElement): void {
@@ -37,21 +42,38 @@ export function mountController(root: HTMLDivElement): void {
     busy = true;
     open.disabled = resume.disabled = submit.disabled = true;
     error.textContent = "";
-    try { await action(); } catch (cause) { error.textContent = errorMessage(cause); }
-    finally { busy = false; open.disabled = resume.disabled = submit.disabled = false; }
+    try {
+      await action();
+    } catch (cause) {
+      error.textContent = errorMessage(cause);
+    } finally {
+      busy = false;
+      open.disabled = resume.disabled = submit.disabled = false;
+    }
   }
   open.addEventListener("click", () => void perform(openBrowser));
   resume.addEventListener("click", () => void perform(openBrowser));
-  root.querySelector<HTMLFormElement>("#search-form")!.addEventListener("submit", (event) => {
-    event.preventDefault();
-    void perform(() => navigate(input.value));
-  });
+  root
+    .querySelector<HTMLFormElement>("#search-form")!
+    .addEventListener("submit", (event) => {
+      event.preventDefault();
+      void perform(() => navigate(input.value));
+    });
   void watchBrowser((state) => {
     root.querySelector("#page-title")!.textContent = state.title || "YouTube";
     root.querySelector("#current-url")!.textContent = state.currentUrl;
     root.querySelector("#current-url")!.setAttribute("title", state.currentUrl);
-    root.querySelector("#session-status")!.textContent = state.loading ? "Loading page…" : state.isOpen ? "Browser window open" : "Last visited page";
-    open.querySelector("span")!.textContent = state.isOpen ? "Return to YouTube" : "Open YouTube";
+    root.querySelector("#session-status")!.textContent = state.loading
+      ? "Loading page…"
+      : state.isOpen
+        ? "Browser window open"
+        : "Last visited page";
+    open.querySelector("span")!.textContent = state.isOpen
+      ? "Return to YouTube"
+      : "Open YouTube";
     error.textContent = state.error ?? "";
-  }).catch(() => { error.textContent = "Launch the desktop app with npm run tauri dev to connect to YouTube."; });
+  }).catch(() => {
+    error.textContent =
+      "Launch the desktop app with npm run tauri dev to connect to YouTube.";
+  });
 }

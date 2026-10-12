@@ -11,17 +11,19 @@
   },
   "app": {
     "withGlobalTauri": false,
-    "windows": [{
-      "label": "controller",
-      "create": false,
-      "title": "MediaBrowser",
-      "width": 980,
-      "height": 740,
-      "minWidth": 760,
-      "minHeight": 640,
-      "theme": "Dark",
-      "backgroundColor": "#111315"
-    }],
+    "windows": [
+      {
+        "label": "controller",
+        "create": false,
+        "title": "MediaBrowser",
+        "width": 980,
+        "height": 740,
+        "minWidth": 760,
+        "minHeight": 640,
+        "theme": "Dark",
+        "backgroundColor": "#111315"
+      }
+    ],
     "security": {
       "capabilities": ["local-controls"],
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'",
