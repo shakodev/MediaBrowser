@@ -261,6 +261,26 @@ fn parse(json: &[u8]) -> Result<ResolvedStream, String> {
 mod tests {
     use super::*;
     #[test]
+    fn reports_missing_dependencies_and_bounds_subprocess_output() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let missing = std::env::temp_dir().join("mediabrowser-missing-dependency-98f71.exe");
+            for name in ["yt-dlp", "Deno"] {
+                let error = subprocess(&missing, &[], name, 4096).await.unwrap_err();
+                assert!(error.contains(&format!("Missing {name}")));
+                assert!(error.contains("MEDIABROWSER_"));
+            }
+            let exe = std::env::current_exe().unwrap();
+            let error = subprocess(&exe, &["--list".into()], "test", 16)
+                .await
+                .unwrap_err();
+            assert!(error.contains("limit"));
+        });
+    }
+    #[test]
     fn validates_and_canonicalizes_video_urls() {
         assert_eq!(
             canonical_video_url("https://youtu.be/BaW_jenozKc?t=3&list=x")
