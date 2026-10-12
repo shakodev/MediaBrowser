@@ -7,6 +7,7 @@ pub struct Resampler {
     index: u64,
     next: u64,
     previous: Option<([f32; 2], f64)>,
+    held: Option<Frame>,
 }
 
 impl Resampler {
@@ -17,6 +18,7 @@ impl Resampler {
             index: 0,
             next: 0,
             previous: None,
+            held: None,
         }
     }
     pub fn convert(&mut self, block: Block) -> Result<Vec<Frame>, String> {
@@ -41,18 +43,51 @@ impl Resampler {
                         .clamp(0.0, 1.0)
                 };
                 let mix = |c: usize| previous[c] + (stereo[c] - previous[c]) * fraction as f32;
-                result.push(Frame {
+                let frame = Frame {
                     samples: [mix(0), mix(1)],
                     end_seconds: previous_time
                         + (time - previous_time) * fraction
                         + 1.0 / self.output_rate as f64,
-                });
+                };
+                if let Some(previous) = self.held.replace(frame) {
+                    result.push(previous);
+                }
                 self.next += block.rate as u64;
             }
             self.previous = Some((stereo, time));
             self.index += 1;
         }
         Ok(result)
+    }
+
+    /// Hold the last input sample through the final partial interpolation interval.
+    /// Without this, EOF would lose up to one source sample of media time.
+    pub fn finish(&mut self) -> Vec<Frame> {
+        let mut result = Vec::new();
+        if let Some((samples, time)) = self.previous {
+            let end = time + 1.0 / self.input_rate as f64;
+            while self.next < self.index * self.output_rate as u64 {
+                let offset = self.next as f64 / self.output_rate as f64 - (self.index - 1) as f64;
+                let frame = Frame {
+                    samples,
+                    end_seconds: (time
+                        + offset / self.input_rate as f64
+                        + 1.0 / self.output_rate as f64)
+                        .min(end),
+                };
+                if let Some(previous) = self.held.replace(frame) {
+                    result.push(previous);
+                }
+                self.next += self.input_rate as u64;
+            }
+            // One held frame lets EOF clamp a partial downsampling interval before
+            // its timestamp is published to the callback.
+            if let Some(mut last) = self.held.take() {
+                last.end_seconds = end;
+                result.push(last);
+            }
+        }
+        result
     }
 }
 
@@ -75,8 +110,26 @@ mod tests {
                     .unwrap(),
             );
         }
-        assert!((frames.len() as i64 - 48000).abs() <= 2);
-        assert!((frames.last().unwrap().end_seconds - 1.0).abs() < 1.0 / 44100.0);
+        frames.extend(resampler.finish());
+        assert_eq!(frames.len(), 48000);
+        assert!((frames.last().unwrap().end_seconds - 1.0).abs() < 1e-9);
         assert!(frames.iter().all(|f| f.samples == [0.25, 0.25]));
+    }
+
+    #[test]
+    fn downsampling_clamps_the_final_partial_frame_to_source_end() {
+        let mut resampler = Resampler::new(8000);
+        let mut frames = resampler
+            .convert(Block {
+                samples: vec![0.5; 17],
+                channels: 1,
+                rate: 48000,
+                start_seconds: 0.0,
+            })
+            .unwrap();
+        frames.extend(resampler.finish());
+        assert_eq!(frames.len(), 3);
+        assert!((frames.last().unwrap().end_seconds - 17.0 / 48000.0).abs() < 1e-9);
+        assert!(resampler.finish().is_empty());
     }
 }

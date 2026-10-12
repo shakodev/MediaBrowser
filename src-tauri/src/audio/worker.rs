@@ -7,7 +7,7 @@ use super::{
 use crate::playback_state::{PlaybackSnapshot, PlaybackStatus as Status};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         mpsc, Arc,
@@ -33,15 +33,11 @@ struct Active {
 
 impl Active {
     fn open(
-        path: &Path,
+        decoder: LocalDecoder,
         position: f64,
         volume: Arc<AtomicU32>,
         backend: &mut dyn Backend,
     ) -> Result<Self, String> {
-        let mut decoder = LocalDecoder::open(path)?;
-        if position > 0.0 {
-            decoder.seek(position)?;
-        }
         let spec = backend.spec()?;
         let capacity = (spec.rate as usize / 4).max(1); // 250 ms, independent of file length.
         let (pcm, consumer) = RingBuffer::new(capacity);
@@ -85,7 +81,11 @@ impl Active {
                     self.pending = self.resampler.convert(block)?;
                     self.cursor = 0;
                 }
-                None => self.eof = true,
+                None => {
+                    self.pending = self.resampler.finish();
+                    self.cursor = 0;
+                    self.eof = true;
+                }
             }
         }
         while self.cursor < self.pending.len() && self.pcm.slots() > 0 {
@@ -108,7 +108,7 @@ impl Active {
         let ended = self.eof && self.cursor == self.pending.len() && empty && self.clock.drained();
         if !ended {
             for _ in 0..8 {
-                if self.pcm.slots() == 0 || self.eof {
+                if self.pcm.slots() == 0 || (self.eof && self.cursor == self.pending.len()) {
                     break;
                 }
                 self.fill()?;
@@ -159,7 +159,19 @@ impl Worker {
     }
     fn start(&mut self, position: f64) -> Result<(), String> {
         let path = self.path.as_ref().ok_or("Load a local audio file first.")?;
-        let active = Active::open(path, position, self.volume.clone(), self.backend.as_mut())?;
+        let mut decoder = LocalDecoder::open(path)?;
+        if position > 0.0 {
+            decoder.seek(position)?;
+        }
+        self.start_decoder(decoder, position)
+    }
+    fn start_decoder(&mut self, decoder: LocalDecoder, position: f64) -> Result<(), String> {
+        let active = Active::open(
+            decoder,
+            position,
+            self.volume.clone(),
+            self.backend.as_mut(),
+        )?;
         self.active = Some(active);
         self.snapshot.status = Status::Playing;
         self.snapshot.error = None;
@@ -181,6 +193,9 @@ impl Worker {
                 self.snapshot.error = None;
             }
             Operation::Play => {
+                if self.path.is_none() {
+                    return Err("Load a local audio file first.".into());
+                }
                 if self.snapshot.status != Status::Playing {
                     let position = if self.snapshot.status == Status::Ended {
                         0.0
@@ -232,7 +247,7 @@ impl Worker {
                 {
                     self.snapshot.status = Status::Ended;
                 } else if playing {
-                    if let Err(error) = self.start(position) {
+                    if let Err(error) = self.start_decoder(decoder, position) {
                         self.fail(error.clone());
                         return Err(error);
                     }
@@ -275,3 +290,7 @@ pub fn run(receiver: mpsc::Receiver<Request>) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
