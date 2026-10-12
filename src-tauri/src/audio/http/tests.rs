@@ -240,10 +240,12 @@ fn progressive_http_mp4_initialization_does_not_scan_media_body() {
     let mut data = fast_start_fixture();
     // Many small valid atoms mimic fragmented MP4 skip behavior: eager probing
     // would read each body because it fits inside Symphonia's skip threshold.
-    let padding = 4 * 1024 * 1024;
-    data.extend_from_slice(&(padding as u32).to_be_bytes());
-    data.extend_from_slice(b"free");
-    data.resize(data.len() + padding - 8, 0);
+    let padding = 64 * 1024;
+    for _ in 0..64 {
+        data.extend_from_slice(&(padding as u32).to_be_bytes());
+        data.extend_from_slice(b"free");
+        data.resize(data.len() + padding - 8, 0);
+    }
     let server = Server::new(data, "ok");
     let stats = Arc::new(TransferStats::default());
     let token = CancellationToken::new();

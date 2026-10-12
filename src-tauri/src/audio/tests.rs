@@ -326,6 +326,12 @@ fn stop_cancels_accepted_work_and_queue_backpressure_does_not_cancel_it() {
             let first = receiver.recv().unwrap();
             accepted.send(()).unwrap();
             let stop = receiver.recv().unwrap();
+            // Dispatch reserves the queue slot before publishing cancellation, so
+            // wait for the submitting thread to finish that synchronous section.
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while !first.cancel.is_cancelled() && Instant::now() < deadline {
+                std::thread::yield_now();
+            }
             assert!(first.cancel.is_cancelled());
             assert!(!stop.cancel.is_cancelled());
             first

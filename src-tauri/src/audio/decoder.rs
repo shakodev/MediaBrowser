@@ -189,17 +189,6 @@ fn skip_frames(target: f64, start: f64, rate: u32) -> usize {
         .max(0.0)) as usize
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn trims_seek_inside_packet_at_sample_precision() {
-        assert_eq!(skip_frames(2.0 + 73.0 / 44100.0, 2.0, 44100), 73);
-        assert_eq!(skip_frames(1.5, 2.0, 48000), 0);
-        assert_eq!(skip_frames(2.00001, 2.0, 48000), 1);
-    }
-}
-
 /// A fast-start HTTP MP4 is opened progressively; subsequent seeks use ranges.
 struct ProgressiveSource {
     inner: Box<dyn MediaSource>,
@@ -268,4 +257,15 @@ fn has_fast_start(source: &mut dyn MediaSource) -> Result<bool, String> {
         .seek(SeekFrom::Start(0))
         .map_err(|_| "Cannot rewind HTTP audio.".to_owned())?;
     result.map_err(|e| format!("Cannot inspect HTTP MP4: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn trims_seek_inside_packet_at_sample_precision() {
+        assert_eq!(skip_frames(2.0 + 73.0 / 44100.0, 2.0, 44100), 73);
+        assert_eq!(skip_frames(1.5, 2.0, 48000), 0);
+        assert_eq!(skip_frames(2.00001, 2.0, 48000), 1);
+    }
 }
