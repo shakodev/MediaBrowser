@@ -57,7 +57,7 @@ pub async fn pause(view: &Webview, expected: &BrowserPlayback) -> Result<(), Str
 }
 
 pub async fn restore(view: &Webview, target: &BrowserPlayback) -> Result<(), String> {
-    apply(view, target, "video.volume = expected.volume; video.muted = false; video.currentTime = expected.positionSeconds; if (expected.paused) video.pause(); else video.play().catch(() => {});").await
+    apply(view, target, "const player = document.querySelector('#movie_player'); player.setVolume?.(expected.volume * 100); player.unMute?.(); video.volume = expected.volume; video.muted = false; video.currentTime = expected.positionSeconds; if (expected.paused) video.pause(); else video.play().catch(() => {});").await
 }
 
 pub async fn resume(view: &Webview, target: &BrowserPlayback) -> Result<(), String> {

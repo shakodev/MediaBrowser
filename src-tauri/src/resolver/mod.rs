@@ -1,4 +1,6 @@
 //! yt-dlp resolves public videos only. It never transfers or transforms media.
+#[cfg(windows)]
+mod job;
 pub mod playlist;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
@@ -145,6 +147,8 @@ async fn subprocess(
         if e.kind() == std::io::ErrorKind::NotFound { format!("Missing {name}. Install it on PATH or set MEDIABROWSER_{} to its executable path, then restart the app.", if name == "Deno" { "DENO" } else { "YTDLP" }) }
         else { format!("Cannot launch {name}; check its executable path and permissions.") }
     })?;
+    #[cfg(windows)]
+    let _job = job::ResolverJob::attach(&mut child)?;
     let stdout = child.stdout.take().ok_or("Missing resolver output pipe.")?;
     let stderr = child.stderr.take().ok_or("Missing resolver error pipe.")?;
     let read = async {

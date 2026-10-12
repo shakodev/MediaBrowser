@@ -155,6 +155,8 @@ impl YtDlpResolver {
         let mut child = command.spawn().map_err(|_| {
             "Cannot launch yt-dlp. Install it on PATH or set MEDIABROWSER_YTDLP.".to_owned()
         })?;
+        #[cfg(windows)]
+        let _job = super::job::ResolverJob::attach(&mut child)?;
         let mut reader =
             BufReader::new(child.stdout.take().ok_or("Missing playlist output pipe.")?);
         let playlist = read_metadata(&mut reader).await?;

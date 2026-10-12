@@ -107,7 +107,12 @@ async fn enter(app: &AppHandle) -> Result<(), String> {
     // only audible source or try to resume a view that was already destroyed.
     app.state::<BrowserState>()
         .update(|s| s.mode = PlaybackMode::RamSaver);
-    crate::desktop::checkpoint_audio(app, &engine.snapshot().await?).await?;
+    if let Err(error) = crate::desktop::checkpoint_audio(app, &engine.snapshot().await?).await {
+        crate::desktop::report(
+            app,
+            &format!("Playback continues, but saving failed: {error}"),
+        );
+    }
     drop(view);
     crate::desktop::destroy_ui(app)
 }
@@ -222,8 +227,8 @@ async fn restore(app: &AppHandle) -> Result<(), String> {
             if let Ok(current) = media::capture(&view).await {
                 if !target.same_track(&current) { return Err("YouTube changed tracks during restoration. Retry.".into()); }
                 let elapsed = current.position_seconds - target.position_seconds;
-                if (target.paused && current.paused && elapsed.abs() < 0.25)
-                    || (!target.paused && !current.paused && elapsed > 0.02 && elapsed < 2.0) {
+                if (current.volume - target.volume).abs() < 0.02 && ((target.paused && current.paused && elapsed.abs() < 0.25)
+                    || (!target.paused && !current.paused && elapsed > 0.02 && elapsed < 2.0)) {
                     let audio = restore_target(&engine.snapshot().await?)?;
                     if !target.same_track(&audio) || target.paused != audio.paused || (current.position_seconds - audio.position_seconds).abs() > 2.0 {
                         return Err("Playback moved while YouTube was starting. Rust audio is preserved; retry Browser Mode.".into());

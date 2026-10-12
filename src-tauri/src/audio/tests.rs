@@ -412,6 +412,49 @@ fn stop_cancels_accepted_work_and_queue_backpressure_does_not_cancel_it() {
     });
 }
 
+#[test]
+fn shutdown_cancels_inflight_work_even_with_a_full_command_queue() {
+    tauri::async_runtime::block_on(async {
+        let (sender, receiver) = mpsc::sync_channel::<Request>(1);
+        let engine = super::super::AudioEngine {
+            sender: sender.clone(),
+            control: Arc::default(),
+        };
+        let (accepted, waiting) = tokio::sync::oneshot::channel();
+        let worker = std::thread::spawn(move || {
+            let request = receiver.recv().unwrap();
+            accepted.send(()).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while !request.cancel.is_cancelled() {
+                assert!(
+                    Instant::now() < deadline,
+                    "shutdown did not cancel active IO"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            let _ = request.reply.send(Err("cancelled".into()));
+            PlaybackSnapshot::default()
+        });
+        *engine.control.worker.lock().unwrap() = Some(worker);
+        let (load, shutdown) =
+            tokio::join!(engine.load_youtube("https://youtu.be/BaW_jenozKc"), async {
+                waiting.await.unwrap();
+                let (reply, _) = tokio::sync::oneshot::channel();
+                sender
+                    .try_send(Request {
+                        operation: Operation::Snapshot,
+                        cancel: CancellationToken::new(),
+                        reply,
+                    })
+                    .unwrap();
+                engine.shutdown().await
+            });
+        assert!(load.is_err());
+        shutdown.unwrap();
+        assert!(engine.snapshot().await.is_err());
+    });
+}
+
 struct QueueResolver {
     url: Url,
     fail_mask: AtomicU64,

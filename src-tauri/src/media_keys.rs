@@ -19,7 +19,16 @@ use windows::{
 pub(crate) struct MediaKeys {
     controls: SystemMediaTransportControls,
     token: i64,
-    last: Mutex<Option<(bool, PlaybackStatus, String)>>,
+    last: Mutex<Option<SessionState>>,
+}
+
+#[derive(PartialEq)]
+struct SessionState {
+    enabled: bool,
+    status: PlaybackStatus,
+    queue: bool,
+    title: String,
+    artist: String,
 }
 
 pub(crate) fn setup(app: &AppHandle) -> Result<MediaKeys, String> {
@@ -94,7 +103,19 @@ impl MediaKeys {
             .as_ref()
             .map(|m| m.title.clone())
             .unwrap_or_else(|| "MediaBrowser".into());
-        let key = (enabled, snapshot.status, title.clone());
+        let queue = snapshot.queue.as_ref().is_some_and(|q| q.total > 0);
+        let artist = snapshot
+            .metadata
+            .as_ref()
+            .and_then(|m| m.uploader.as_deref())
+            .unwrap_or("");
+        let key = SessionState {
+            enabled,
+            status: snapshot.status,
+            queue,
+            title: title.clone(),
+            artist: artist.into(),
+        };
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
         if last.as_ref() == Some(&key) {
             return Ok(());
@@ -106,7 +127,6 @@ impl MediaKeys {
             PlaybackStatus::Loading => MediaPlaybackStatus::Changing,
             _ => MediaPlaybackStatus::Stopped,
         })?;
-        let queue = snapshot.queue.as_ref().is_some_and(|q| q.total > 0);
         self.controls.SetIsNextEnabled(queue)?;
         self.controls.SetIsPreviousEnabled(queue)?;
         let display = self.controls.DisplayUpdater()?;
