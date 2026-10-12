@@ -12,7 +12,7 @@ name = "media_browser_lib"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "~2.12.3", features = ["unstable"] }
+tauri = { version = "~2.12.3", features = ["unstable", "tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
@@ -25,7 +25,7 @@ symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "a
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
-windows = "0.62"
+windows = { version = "0.62", features = ["Media", "Foundation", "Win32_System_WinRT"] }
 
 [profile.release]
 codegen-units = 1

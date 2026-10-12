@@ -1,5 +1,7 @@
 pub mod audio;
 mod browser;
+mod desktop;
+mod media_keys;
 pub mod playback_state;
 pub mod queue;
 pub mod resolver;
@@ -9,12 +11,10 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let state_path = app.path().app_data_dir()?.join("browser-state.json");
+            let state_path = desktop::data_dir(app.handle())?.join("browser-state.json");
             app.manage(browser::BrowserState::load(state_path));
             app.manage(audio::AudioEngine::new()?);
-            tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
-                .on_navigation(browser::is_local_url)
-                .build()?;
+            desktop::setup(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -33,11 +33,18 @@ pub fn run() {
             audio::commands::audio_snapshot,
             audio::commands::audio_queue,
         ])
-        .on_window_event(|window, event| {
-            if window.label() == "controller" && matches!(event, tauri::WindowEvent::Destroyed) {
-                window.app_handle().exit(0);
+        .build(tauri::generate_context!())
+        .expect("failed to build MediaBrowser")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                // Last-window closure keeps the native tray/audio event loop alive.
+                // Programmatic exit also goes through graceful shutdown first.
+                if !desktop::exit_ready(app) {
+                    api.prevent_exit();
+                    if code.is_some() {
+                        desktop::quit(app);
+                    }
+                }
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("failed to run MediaBrowser");
+        });
 }

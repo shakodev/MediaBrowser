@@ -37,16 +37,23 @@ impl Drop for Switching {
 #[tauri::command]
 pub async fn ram_saver(webview: Webview, app: AppHandle) -> Result<(), String> {
     super::authorize(&webview)?;
+    enter_ram_saver(&app).await
+}
+
+pub(crate) async fn enter_ram_saver(app: &AppHandle) -> Result<(), String> {
+    if crate::desktop::is_quitting(app) {
+        return Err("MediaBrowser is quitting.".into());
+    }
     let state = app.state::<BrowserState>();
     let _lock = state
         .transition
         .try_write()
         .map_err(|_| "A playback operation is already in progress.")?;
     if state.get().mode == PlaybackMode::RamSaver {
-        return Ok(());
+        return crate::desktop::destroy_ui(app);
     }
-    let switching = Switching::begin(&app);
-    let result = enter(&app).await;
+    let switching = Switching::begin(app);
+    let result = enter(app).await;
     switching.finish(&result);
     result
 }
@@ -85,14 +92,6 @@ async fn enter(app: &AppHandle) -> Result<(), String> {
         if latest.paused {
             engine.seek(latest.position_seconds).await?;
         }
-        // Close the actual remote view, not just hide the window.
-        view.close()
-            .map_err(|_| "Cannot release the YouTube browser. Retry RAM Saver.")?;
-        app.state::<BrowserState>()
-            .update(|s| s.mode = PlaybackMode::RamSaver);
-        if let Some(window) = app.get_window("browser") {
-            let _ = window.close();
-        }
         Ok(())
     }
     .await;
@@ -102,8 +101,15 @@ async fn enter(app: &AppHandle) -> Result<(), String> {
         if browser_paused {
             let _ = media::resume(&view, &latest).await;
         }
+        return result;
     }
-    result
+    // The handoff is committed. A window-release failure must never pause the
+    // only audible source or try to resume a view that was already destroyed.
+    app.state::<BrowserState>()
+        .update(|s| s.mode = PlaybackMode::RamSaver);
+    crate::desktop::checkpoint_audio(app, &engine.snapshot().await?).await?;
+    drop(view);
+    crate::desktop::destroy_ui(app)
 }
 
 async fn confirm_engine(engine: &AudioEngine, baseline: &PlaybackSnapshot) -> Result<(), String> {
@@ -168,7 +174,7 @@ pub(crate) fn restore_target(audio: &PlaybackSnapshot) -> Result<BrowserPlayback
     Ok(target)
 }
 
-pub(super) async fn return_to_browser(app: &AppHandle) -> Result<(), String> {
+pub(crate) async fn return_to_browser(app: &AppHandle) -> Result<(), String> {
     if app.state::<BrowserState>().get().mode != PlaybackMode::RamSaver {
         return super::open(app, None).await;
     }
@@ -199,6 +205,7 @@ async fn restore(app: &AppHandle) -> Result<(), String> {
         let deadline = Instant::now() + Duration::from_secs(30);
         // Native WebView2 mute remains in effect even if YouTube autoplays an ad.
         loop {
+            if crate::desktop::is_quitting(app) { return Err("MediaBrowser is quitting.".into()); }
             if app.get_webview("youtube").is_none() { return Err("Browser closed during restoration. Rust audio is preserved.".into()); }
             if let Ok(current) = media::capture(&view).await {
                 if expected.same_track(&current) { break; }
@@ -211,6 +218,7 @@ async fn restore(app: &AppHandle) -> Result<(), String> {
         media::restore(&view, &target).await?;
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
+            if crate::desktop::is_quitting(app) { return Err("MediaBrowser is quitting.".into()); }
             if let Ok(current) = media::capture(&view).await {
                 if !target.same_track(&current) { return Err("YouTube changed tracks during restoration. Retry.".into()); }
                 let elapsed = current.position_seconds - target.position_seconds;

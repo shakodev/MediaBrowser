@@ -1,5 +1,5 @@
 pub(crate) mod handoff;
-mod media;
+pub(crate) mod media;
 mod native;
 mod state;
 mod url_policy;
@@ -62,12 +62,20 @@ impl Drop for OpeningGuard<'_> {
 #[tauri::command]
 pub async fn open_browser(webview: Webview, app: AppHandle) -> Result<(), String> {
     authorize(&webview)?;
+    reopen(&app).await
+}
+
+pub(crate) async fn reopen(app: &AppHandle) -> Result<(), String> {
+    if crate::desktop::is_quitting(app) {
+        return Err("MediaBrowser is quitting.".into());
+    }
     let state = app.state::<BrowserState>();
     let _guard = state
         .transition
         .try_write()
         .map_err(|_| "A playback operation is already in progress.")?;
-    handoff::return_to_browser(&app).await
+    crate::desktop::open_controller(app)?;
+    handoff::return_to_browser(app).await
 }
 
 async fn open(app: &AppHandle, destination: Option<url::Url>) -> Result<(), String> {

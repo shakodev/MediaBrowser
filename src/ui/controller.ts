@@ -15,7 +15,7 @@ export function mountController(root: HTMLDivElement): void {
         <div class="brand"><span class="brand-mark">${icon("wave")}</span><span>MediaBrowser<small>LESS WEIGHT. MORE MUSIC.</small></span></div>
         <span class="nav-label">WORKSPACE</span>
         <button class="nav-item selected" id="browser-mode" aria-current="page">${icon("browser")} Browser Mode</button>
-        <button class="nav-item" id="ram-saver" disabled title="Continue this YouTube video with audio only">${icon("leaf")} RAM Saver</button>
+        <button class="nav-item" id="ram-saver" disabled title="Close all windows and continue playback from the Windows tray">${icon("leaf")} RAM Saver</button>
         <div class="sidebar-bottom"><span class="system-dot"></span> Built for Windows<small>Rust · Tauri · WebView2</small></div>
       </aside>
       <div class="workspace">
