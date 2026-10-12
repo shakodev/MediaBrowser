@@ -2,6 +2,7 @@ import {
   errorMessage,
   navigate,
   openBrowser,
+  ramSaver,
   watchBrowser,
 } from "../api/browser";
 import { icon } from "./icons";
@@ -13,8 +14,8 @@ export function mountController(root: HTMLDivElement): void {
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">${icon("wave")}</span><span>MediaBrowser<small>LESS WEIGHT. MORE MUSIC.</small></span></div>
         <span class="nav-label">WORKSPACE</span>
-        <div class="nav-item selected" aria-current="page">${icon("browser")} Browser Mode <span class="active-dot"></span></div>
-        <button class="nav-item" disabled title="Audio-only playback is planned for a later stage">${icon("leaf")} RAM Saver <span class="soon">SOON</span></button>
+        <button class="nav-item selected" id="browser-mode" aria-current="page">${icon("browser")} Browser Mode</button>
+        <button class="nav-item" id="ram-saver" disabled title="Continue this YouTube video with audio only">${icon("leaf")} RAM Saver</button>
         <div class="sidebar-bottom"><span class="system-dot"></span> Built for Windows<small>Rust · Tauri · WebView2</small></div>
       </aside>
       <div class="workspace">
@@ -39,11 +40,20 @@ export function mountController(root: HTMLDivElement): void {
   const input = root.querySelector<HTMLInputElement>("#search")!;
   const submit = root.querySelector<HTMLButtonElement>(".search-submit")!;
   const error = root.querySelector<HTMLParagraphElement>("#error")!;
+  const saver = root.querySelector<HTMLButtonElement>("#ram-saver")!;
+  const browserMode = root.querySelector<HTMLButtonElement>("#browser-mode")!;
   let busy = false;
+  let switching = false;
+  let isOpen = false;
+  let mode: "browser" | "ramSaver" = "browser";
+  function controls(): void {
+    open.disabled = resume.disabled = submit.disabled = browserMode.disabled = busy || switching;
+    saver.disabled = busy || switching || !isOpen || mode === "ramSaver";
+  }
   async function perform(action: () => Promise<void>): Promise<void> {
     if (busy) return;
     busy = true;
-    open.disabled = resume.disabled = submit.disabled = true;
+    controls();
     error.textContent = "";
     try {
       await action();
@@ -51,11 +61,13 @@ export function mountController(root: HTMLDivElement): void {
       error.textContent = errorMessage(cause);
     } finally {
       busy = false;
-      open.disabled = resume.disabled = submit.disabled = false;
+      controls();
     }
   }
   open.addEventListener("click", () => void perform(openBrowser));
   resume.addEventListener("click", () => void perform(openBrowser));
+  browserMode.addEventListener("click", () => void perform(openBrowser));
+  saver.addEventListener("click", () => void perform(ramSaver));
   root
     .querySelector<HTMLFormElement>("#search-form")!
     .addEventListener("submit", (event) => {
@@ -63,15 +75,26 @@ export function mountController(root: HTMLDivElement): void {
       void perform(() => navigate(input.value));
     });
   void watchBrowser((state) => {
+    switching = state.switching;
+    isOpen = state.isOpen;
+    mode = state.mode;
+    controls();
+    saver.classList.toggle("selected", mode === "ramSaver");
+    browserMode.classList.toggle("selected", mode === "browser");
+    for (const [button, selected] of [[saver, mode === "ramSaver"], [browserMode, mode === "browser"]] as const) {
+      if (selected) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+    }
+    root.querySelector("h1")!.textContent = mode === "ramSaver" ? "RAM Saver Mode" : "Browser Mode";
+    root.querySelector(".pill")!.textContent = mode === "ramSaver" ? "Rust audio" : "WebView2";
     root.querySelector("#page-title")!.textContent = state.title || "YouTube";
     root.querySelector("#current-url")!.textContent = state.currentUrl;
     root.querySelector("#current-url")!.setAttribute("title", state.currentUrl);
-    root.querySelector("#session-status")!.textContent = state.loading
+    root.querySelector("#session-status")!.textContent = switching ? "Switching playback…" : mode === "ramSaver" ? "Audio only · browser released" : state.loading
       ? "Loading page…"
       : state.isOpen
         ? "Browser window open"
         : "Last visited page";
-    open.querySelector("span")!.textContent = state.isOpen
+    open.querySelector("span")!.textContent = mode === "ramSaver" ? "Return to Browser Mode" : state.isOpen
       ? "Return to YouTube"
       : "Open YouTube";
     error.textContent = state.error ?? "";

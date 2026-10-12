@@ -28,6 +28,21 @@ The executable is `src-tauri/target/release/media-browser.exe`. Installer packag
 - Closing the browser releases its views; reopening restores the saved page. Closing the controller exits the application.
 - Local MP3, AAC (ADTS), and AAC-LC M4A playback through a custom Rust engine. Paste a file path into **Local playback**, load it, then use Play/Pause/Stop, volume, the position slider, or a seek time in seconds. Quoted Windows paths are accepted.
 - YouTube playlist playback with automatic advancement, previous/next, track selection, shuffle, repeat off/all/one, and a paged track list with current-track metadata.
+- RAM Saver buttons in the controller and browser toolbar hand the current public video or playlist track to the Rust engine. Browser Mode restores the current audio track and position.
+
+## RAM Saver handoff
+
+Open a public YouTube video, then press **RAM Saver** in either window. Rust requests a small, on-demand playback snapshot: video ID, public `list` ID, one-based `index`, current media timestamp, effective volume (zero when muted), and paused state. Native WebView2 navigation events continue to track SPA changes. The snapshot checks the current URL against the loaded player identity; ads, live streams, loading players and stale SPA state fail safely. The remote webview has no Tauri permissions or application message bridge. The integration does not read cookies or expose filesystem access or audio stream URLs. This integration reads only the current player and HTML media element, never YouTube's internal autoplay queue.
+
+For a playlist, yt-dlp extracts public flat metadata into the existing disk-backed queue. The captured index and video ID select the exact occurrence; original playlist indexes are retained when provided by yt-dlp. If hidden entries shifted extraction order, a unique video ID can recover the track. Missing videos or ambiguous duplicates produce an error. The initial transfer never plays the playlist's first track or skips an unsuccessful current track. Mix/radio (`RD`), Watch Later and liked-video queues are rejected; single videos remain single tracks.
+
+Resolution runs while browser playback continues. A fresh capture then rechecks identity and timestamp. The Rust engine seeks and starts muted, with queue advancement suspended. The transfer requires its device-timed playback clock to advance before pausing YouTube, applying volume and closing the remote WebView2 view and browser window. Paused browser playback stays paused after this output check. Navigation, seeks or playback changes during preparation, resolver/network/decoder/device failures, or a failed confirmation leave Browser Mode active and show an error. A failed commit pauses Rust and resumes browser media if the transfer paused it.
+
+Click **Browser Mode**, **Return to Browser Mode**, or the session's open button to restore the current Rust track, public playlist, original index, position, volume and paused state. This uses the current queue entry, including tracks reached with Next/Previous or automatic advancement. The new WebView2 is muted at the native level during restoration, including any ads. Rust continues playing until YouTube confirms the target video, seek and playback progress; only then is Rust paused and the browser unmuted. On failure the new browser is closed and Rust remains available. A stopped or paused Rust track restores paused. Replacing audio with a local file restores the remembered browser page instead.
+
+MVP limitations: only publicly resolvable, non-live videos and playlists supported by the existing AAC/M4A engine; no authenticated extraction, internal autoplay queue, YouTube shuffle/repeat synchronization, seamless/gapless switching, or cross-launch playback/queue persistence. YouTube DOM/player changes, consent, ads, autoplay restrictions, changed playlists and slow seeks can prevent a transfer; the current source remains available for retry. Position checks allow up to two seconds of startup drift. Closing the remote view releases that view; WebView2 may retain shared runtime processes, so no fixed RAM reduction is claimed.
+
+Automated checks cover capture and SPA races, ads/unsupported pages, playback-context validation, duplicate/shifted playlist indexes, muted startup and timestamped PCM output, output confirmation, restoration state and local-only ACLs. A live Windows/YouTube round-trip handoff has not yet been manually verified.
 
 ## Playlists
 
@@ -39,7 +54,7 @@ Rust and the UI retain at most one page of 40 tracks per snapshot. Shuffle compu
 
 Signed audio URLs remain in Rust. Only the current track and one cancellable next-track resolution are retained; prefetch downloads no audio. Prefetched results expire after 60 seconds and are resolved again on demand. Queue changes, pause, stop, seek, replacement and shutdown cancel or discard speculative work. Existing HTTP URL refresh handles rejected/expired playback URLs.
 
-Unavailable entries and resolution/decoding failures are marked and skipped in the requested direction. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. Queue persistence and RAM Saver mode switching are outside this stage.
+Unavailable entries and resolution/decoding failures are marked and skipped in the requested direction. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. Queue persistence is outside this stage; RAM Saver uses this same queue.
 
 Metadata-only live verification (no audio resolution or playback):
 
@@ -57,7 +72,7 @@ The browser window has two sibling webviews: a bundled `browser-toolbar` and rem
 
 Top-level remote navigation is limited to HTTPS YouTube hosts and the exact Google sign-in/consent hosts listed in `url_policy.rs`. Other destinations, popups, and downloads are blocked. Embedded Google sign-in may be restricted by Google; popup-based authentication is not implemented.
 
-Local-file and YouTube audio commands have a separate controller-only capability and verify the caller's label and local origin. Remote YouTube content and the browser toolbar cannot open local audio files or control playback.
+Local-file and YouTube audio commands have a separate controller-only capability and verify the caller's label and local origin. Remote YouTube content has no application permissions. The trusted browser toolbar can request the narrow RAM Saver handoff; direct audio and local-file commands remain controller-only.
 
 ## Custom audio engine
 
@@ -75,13 +90,13 @@ Rust callers can clone `AudioEngine` and await `load(path)`, `play()`, `pause()`
 
 This stage supports mono/stereo MP3 and AAC-LC in ADTS or ISO/MP4 containers. HE-AAC, ALAC, DRM, and multichannel source audio are unsupported. AAC encoder priming/padding and MP4 edit-list handling depend on Symphonia. Duration can be unknown or estimated for raw AAC or MP3 without timing metadata; the final decoded duration is available at EOF. The numeric seek control works when duration is unknown. Linear resampling maintains continuous timing across packets but is not a band-limited quality resampler. Position accuracy depends on the device driver's timestamps; seeks/pause can have short device restart latency.
 
-RAM Saver lifecycle, queues, and media keys are outside this stage. Browser Mode still uses YouTube's own playback controls independently; avoid playing both sources simultaneously. There is no MPV, FFmpeg, Electron, or external audio player.
+RAM Saver coordinates browser and engine playback as described above. Media keys are outside this stage. Direct audio-load controls remain available independently; use RAM Saver when transferring browser playback. There is no MPV, FFmpeg, Electron, or external audio player.
 
 ## YouTube audio streams
 
 Install a current official **yt-dlp executable** and **Deno 2.3+**, place both on `PATH`, and restart the app. Alternatively set `MEDIABROWSER_YTDLP` and `MEDIABROWSER_DENO` to absolute executable paths before launching. Missing or unlaunchable dependencies produce actionable errors. The official yt-dlp executable bundles its EJS challenge scripts; Python installations need the matching `yt-dlp[default]` dependencies. See the [official runtime/EJS setup guide](https://github.com/yt-dlp/yt-dlp/wiki/EJS).
 
-Paste a public YouTube watch, shorts, or youtu.be video URL into **Audio playback → Load YouTube**, then press Play. The title and transport use the same controller as local files. Stop stays available during loading so extraction or network IO can be cancelled. This does not coordinate or close the separate Browser Mode window.
+Paste a public YouTube watch, shorts, or youtu.be video URL into **Audio playback → Load YouTube**, then press Play. The title and transport use the same controller as local files. Stop stays available during loading so extraction or network IO can be cancelled. Use RAM Saver to transfer and close Browser Mode; loading a URL directly is independent.
 
 `resolver` runs yt-dlp with `Command` argument arrays, no shell, ignored user configuration, no playlist, and no media download or postprocessing. It prefers AAC-LC M4A direct HTTPS audio, then HTTP M4A or HTTPS AAC. Typed JSON must describe audio-only, non-live, unencrypted compatible media. JSON output is limited to 4 MiB, stderr to 64 KiB, and each subprocess to 60 seconds; cancellation kills the resolver. Only classified errors escape stderr. Signed stream URLs and playback headers stay in Rust, have no Debug/Serialize implementation, and are never logged, persisted, or sent to the frontend. The snapshot includes the canonical public video URL, metadata, and aggregate transfer counters.
 
@@ -106,6 +121,7 @@ The streaming stage also passes the frontend production build, Rust formatting, 
 
 ```powershell
 npm run build
+npm test
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

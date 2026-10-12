@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export interface BrowserState {
+  mode: "browser" | "ramSaver";
+  switching: boolean;
   currentUrl: string;
   lastYoutubeUrl: string;
   title: string;
@@ -13,6 +15,7 @@ export interface BrowserState {
 }
 
 export const openBrowser = () => invoke<void>("open_browser");
+export const ramSaver = () => invoke<void>("ram_saver");
 export const navigate = (input: string) =>
   invoke<void>("navigate_browser", { input });
 export const browserAction = (action: "back" | "forward" | "reload") =>
