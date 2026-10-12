@@ -3,7 +3,8 @@ import { errorMessage } from "../api/browser";
 
 export function mountAudio(root: HTMLElement): void {
   root.innerHTML = `
-    <div class="local-audio-heading"><strong>Local playback</strong><span id="audio-status" role="status">Load an MP3, AAC or M4A file</span></div>
+    <div class="local-audio-heading"><strong>Audio playback</strong><span id="audio-status" role="status">Load a public YouTube video or local audio file</span></div>
+    <form id="youtube-load" class="local-file-form"><label class="sr-only" for="youtube-url">Public YouTube video URL</label><input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Load YouTube</button></form>
     <form id="audio-load" class="local-file-form"><label class="sr-only" for="audio-path">Local audio file path</label><input id="audio-path" placeholder="C:\\Music\\track.m4a" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Load file</button></form>
     <div class="local-transport"><button id="audio-play" class="primary" disabled>Play</button><button id="audio-pause" disabled>Pause</button><button id="audio-stop" disabled>Stop</button><output id="audio-time">0:00 / —</output><label class="volume-control">Volume <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="1"></label></div>
     <div class="local-seek"><label class="sr-only" for="audio-progress">Playback position</label><input id="audio-progress" type="range" min="0" max="1" step="0.01" value="0" disabled><form id="audio-seek"><label class="sr-only" for="audio-seconds">Seek to seconds</label><input id="audio-seconds" type="number" min="0" step="0.01" placeholder="Seconds" aria-label="Seek to seconds" required><button disabled>Seek</button></form></div>
@@ -22,43 +23,51 @@ export function mountAudio(root: HTMLElement): void {
   function render(next: PlaybackSnapshot): void {
     state = next;
     root.querySelector("#audio-status")!.textContent = next.path
-      ? `${next.status} · ${next.path.split(/[\\/]/).pop()}`
-      : "Load an MP3, AAC or M4A file";
+      ? `${next.status} · ${(next.metadata?.title ?? next.path.split(/[\\/]/).pop())}`
+      : "Load a public YouTube video or local audio file";
     root.querySelector("#audio-time")!.textContent = `${time(next.positionSeconds)} / ${next.durationSeconds === null ? "—" : time(next.durationSeconds)}`;
     progress.disabled = busy || next.durationSeconds === null || !next.path;
     progress.max = String(next.durationSeconds ?? 1);
     if (!dragging) progress.value = String(next.positionSeconds);
     if (document.activeElement !== volume) volume.value = String(next.volume);
     for (const button of root.querySelectorAll<HTMLButtonElement>("button")) {
-      button.disabled = busy || (button.closest("#audio-load") === null && !next.path);
+      button.disabled = busy || (button.closest("#audio-load, #youtube-load") === null && !next.path);
     }
     root.querySelector<HTMLButtonElement>("#audio-pause")!.disabled = busy || next.status !== "playing";
     root.querySelector<HTMLButtonElement>("#audio-play")!.disabled = busy || !next.path || next.status === "playing";
+    root.querySelector<HTMLButtonElement>("#audio-stop")!.disabled = !next.path && !busy;
     if (next.error) error.textContent = next.error;
   }
-  async function perform(action: () => Promise<PlaybackSnapshot>): Promise<void> {
-    if (busy) return;
+  async function perform(action: () => Promise<PlaybackSnapshot>, interrupt = false): Promise<void> {
+    if (busy && !interrupt) return;
     busy = true;
-    revision++;
+    const operationRevision = ++revision;
     error.textContent = "";
     if (state) render(state);
+    root.querySelector<HTMLButtonElement>("#audio-stop")!.disabled = false;
     try {
       const next = await action();
+      if (operationRevision !== revision) return;
       busy = false;
       render(next);
     } catch (cause) {
+      if (operationRevision !== revision) return;
       busy = false;
       if (state) render(state);
       error.textContent = errorMessage(cause);
     }
   }
+  root.querySelector("#youtube-load")!.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void perform(() => audio.loadYoutube(root.querySelector<HTMLInputElement>("#youtube-url")!.value.trim()));
+  });
   root.querySelector("#audio-load")!.addEventListener("submit", (event) => {
     event.preventDefault();
     void perform(() => audio.load(path.value.trim().replace(/^"|"$/g, "")));
   });
   root.querySelector("#audio-play")!.addEventListener("click", () => void perform(audio.play));
   root.querySelector("#audio-pause")!.addEventListener("click", () => void perform(audio.pause));
-  root.querySelector("#audio-stop")!.addEventListener("click", () => void perform(audio.stop));
+  root.querySelector("#audio-stop")!.addEventListener("click", () => void perform(audio.stop, true));
   volume.addEventListener("change", () => void perform(() => audio.volume(Number(volume.value))));
   progress.addEventListener("pointerdown", () => { dragging = true; });
   progress.addEventListener("pointerup", () => { dragging = false; });
@@ -76,7 +85,7 @@ export function mountAudio(root: HTMLElement): void {
         if (current === revision) render(next);
       }
     } catch {
-      error.textContent = "Launch the desktop app to use local audio playback.";
+      error.textContent = "Launch the desktop app to use audio playback.";
     }
     if (!disposed) timer = setTimeout(() => void poll(), state?.status === "playing" ? 250 : 1000);
   }

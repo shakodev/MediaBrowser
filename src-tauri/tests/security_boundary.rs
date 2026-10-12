@@ -47,6 +47,7 @@ fn local_audio_permissions_are_controller_only() {
         capability["permissions"],
         serde_json::json!([
             "allow-audio-load",
+            "allow-audio-load-youtube",
             "allow-audio-play",
             "allow-audio-pause",
             "allow-audio-stop",

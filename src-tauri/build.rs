@@ -7,6 +7,7 @@ fn main() {
             "navigate_browser",
             "browser_action",
             "audio_load",
+            "audio_load_youtube",
             "audio_play",
             "audio_pause",
             "audio_stop",

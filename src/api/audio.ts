@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 export interface PlaybackSnapshot {
   status: "stopped" | "paused" | "playing" | "ended" | "error";
   path: string | null;
+  metadata: { id: string; title: string; uploader: string | null; durationSeconds: number | null } | null;
+  transfer: { bytesReceived: number; totalBytes: number; rangeRequests: number; urlRefreshes: number; bufferLimitBytes: number } | null;
   positionSeconds: number;
   durationSeconds: number | null;
   volume: number;
@@ -10,6 +12,7 @@ export interface PlaybackSnapshot {
 }
 
 export const audio = {
+  loadYoutube: (url: string) => invoke<PlaybackSnapshot>("audio_load_youtube", { url }),
   load: (path: string) => invoke<PlaybackSnapshot>("audio_load", { path }),
   play: () => invoke<PlaybackSnapshot>("audio_play"),
   pause: () => invoke<PlaybackSnapshot>("audio_pause"),
