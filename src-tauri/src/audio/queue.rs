@@ -20,7 +20,14 @@ impl Worker {
             let mut playlist = runtime.block_on(async {
                 tokio::select! { biased; _ = self.cancel.cancelled() => Err("Handoff cancelled.".into()), result = resolver.playlist(&url) => result }
             })?;
-            let index = playlist.locate(&state.video_id, state.playlist_index)?;
+            // Mix recommendations are regenerated around the watch seed. Their fresh
+            // indexes cannot identify occurrences from the previous browser queue.
+            let source_index = if crate::resolver::playlist::is_mix_url(&url) {
+                None
+            } else {
+                state.playlist_index
+            };
+            let index = playlist.locate(&state.video_id, source_index)?;
             if playlist.track(index)?.unavailable {
                 return Err("The current playlist track is unavailable.".into());
             }

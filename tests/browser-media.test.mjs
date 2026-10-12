@@ -59,3 +59,16 @@ test("single video and shorts do not invent an internal autoplay queue", () => {
     assert.equal(p.capture().playlistIndex, null);
   }
 });
+
+test("captures Mix radio identity with and without a browser index", () => {
+  const p = page();
+  p.loaded("3s93p9xrCIY");
+  for (const suffix of ["", "&index=17"]) {
+    p.location.href = `https://www.youtube.com/watch?v=3s93p9xrCIY&list=RD3s93p9xrCIY&start_radio=1${suffix}`;
+    const captured = p.capture();
+    assert.equal(captured.videoId, "3s93p9xrCIY");
+    assert.equal(captured.playlistId, "RD3s93p9xrCIY");
+    assert.equal(captured.playlistIndex, suffix ? 17 : null);
+    assert.equal(captured.positionSeconds, 32.375);
+  }
+});

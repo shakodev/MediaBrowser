@@ -5,7 +5,7 @@ export function mountAudio(root: HTMLElement): void {
   root.innerHTML = `
     <div class="local-audio-heading"><strong>Audio playback</strong><span id="audio-status" role="status">Load a public YouTube video or local audio file</span></div>
     <form id="youtube-load" class="local-file-form"><label class="sr-only" for="youtube-url">Public YouTube video URL</label><input id="youtube-url" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Load YouTube</button></form>
-    <form id="playlist-load" class="local-file-form"><label class="sr-only" for="playlist-url">YouTube playlist URL</label><input id="playlist-url" type="url" placeholder="https://www.youtube.com/playlist?list=…" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Play playlist</button></form>
+    <form id="playlist-load" class="local-file-form"><label class="sr-only" for="playlist-url">YouTube playlist or Mix URL</label><input id="playlist-url" type="url" placeholder="YouTube playlist or Mix URL" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Play playlist</button></form>
     <form id="audio-load" class="local-file-form"><label class="sr-only" for="audio-path">Local audio file path</label><input id="audio-path" placeholder="C:\\Music\\track.m4a" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Load file</button></form>
     <div class="local-transport"><button id="audio-play" class="primary" disabled>Play</button><button id="audio-pause" disabled>Pause</button><button id="audio-stop" disabled>Stop</button><output id="audio-time">0:00 / —</output><label class="volume-control">Volume <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="1"></label></div>
     <div class="local-seek"><label class="sr-only" for="audio-progress">Playback position</label><input id="audio-progress" type="range" min="0" max="1" step="0.01" value="0" disabled><form id="audio-seek"><label class="sr-only" for="audio-seconds">Seek to seconds</label><input id="audio-seconds" type="number" min="0" step="0.01" placeholder="Seconds" aria-label="Seek to seconds" required><button disabled>Seek</button></form></div>
@@ -60,7 +60,8 @@ export function mountAudio(root: HTMLElement): void {
     if (!queue || !page) { trackSignature = ""; root.querySelector("#queue-tracks")!.replaceChildren(); return; }
     root.querySelector("#playlist-title")!.textContent = `${queue.title} · ${queue.total} tracks`;
     root.querySelector("#playlist-current")!.textContent = queue.current === null ? "" : `Current: ${queue.current + 1}`;
-    root.querySelector("#queue-notice")!.textContent = queue.notice ?? "";
+    const mix = queue.sourceUrl && new URL(queue.sourceUrl).searchParams.get("list")?.startsWith("RD");
+    root.querySelector("#queue-notice")!.textContent = [queue.notice, mix ? "Mix snapshot · Reload the Mix for fresh recommendations." : null].filter(Boolean).join(" ");
     const shuffle = root.querySelector<HTMLInputElement>("#queue-shuffle")!;
     const repeat = root.querySelector<HTMLSelectElement>("#queue-repeat")!;
     shuffle.checked = queue.shuffle;

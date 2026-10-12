@@ -165,11 +165,21 @@ pub(crate) fn restore_target(audio: &PlaybackSnapshot) -> Result<BrowserPlayback
                 .find(|(k, _)| k == "list")
                 .map(|(_, v)| v.into_owned())
         });
+    // A Mix's disk snapshot index does not describe YouTube's regenerated queue.
+    // Reopen around the current video instead of sending a stale recommendation index.
+    let playlist_index = if playlist_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with("RD"))
+    {
+        None
+    } else {
+        audio.queue.as_ref().and_then(|q| q.source_index)
+    };
     let mut target = BrowserPlayback {
         url: String::new(),
         video_id: metadata.id.clone(),
         playlist_id,
-        playlist_index: audio.queue.as_ref().and_then(|q| q.source_index),
+        playlist_index,
         position_seconds: audio.position_seconds,
         volume: audio.volume,
         paused: audio.status != PlaybackStatus::Playing,
@@ -321,5 +331,23 @@ mod tests {
         assert!(target.url.contains("list=PL_public&index=8&t=42.375s"));
         state.status = PlaybackStatus::Stopped;
         assert!(restore_target(&state).unwrap().paused);
+
+        // After Next, restore the new current track in the same radio context.
+        state.queue.as_mut().unwrap().source_url = Some(
+            "https://www.youtube.com/watch?v=3s93p9xrCIY&list=RD3s93p9xrCIY&start_radio=1".into(),
+        );
+        let mix = restore_target(&state).unwrap();
+        assert_eq!(mix.video_id, "aqz-KE-bpKQ");
+        assert_eq!(mix.playlist_id.as_deref(), Some("RD3s93p9xrCIY"));
+        assert_eq!(mix.playlist_index, None);
+        assert!(mix.url.contains("start_radio=1"));
+        assert!(!mix.url.contains("index="));
+        assert!(mix.paused);
+        let saved = crate::playback_state::persistence::SavedPlayback::audio(&state)
+            .unwrap()
+            .unwrap();
+        assert!(serde_json::to_string(&saved)
+            .unwrap()
+            .contains("RD3s93p9xrCIY"));
     }
 }

@@ -51,8 +51,8 @@ impl BrowserPlayback {
         }
         if let Some(id) = &self.playlist_id {
             crate::resolver::playlist::canonical_playlist_url(&self.url)?;
-            if id.starts_with("RD") || matches!(id.as_str(), "WL" | "LL") {
-                return Err("RAM Saver supports public playlists, not Mix, radio, Watch Later or liked-video queues.".into());
+            if matches!(id.as_str(), "WL" | "LL") {
+                return Err("RAM Saver supports public playlists and Mixes, not Watch Later or liked-video queues.".into());
             }
         }
         Ok(())
@@ -68,6 +68,9 @@ impl BrowserPlayback {
         query.append_pair("v", &self.video_id);
         if let Some(list) = &self.playlist_id {
             query.append_pair("list", list);
+            if list.starts_with("RD") {
+                query.append_pair("start_radio", "1");
+            }
             if let Some(index) = self.playlist_index {
                 query.append_pair("index", &index.to_string());
             }
@@ -185,7 +188,7 @@ mod tests {
         ] {
             assert!(bad.validate().is_err());
         }
-        for list in ["RDaqz-KE-bpKQ", "WL", "LL"] {
+        for list in ["WL", "LL"] {
             let mut bad = good.clone();
             bad.playlist_id = Some(list.into());
             bad.url = bad.watch_url().to_string();
@@ -200,5 +203,31 @@ mod tests {
             position_seconds: 90.0,
             ..good.clone()
         }));
+    }
+
+    #[test]
+    fn mixes_validate_and_keep_radio_context_when_rebuilt() {
+        for list in ["RD3s93p9xrCIY", "RDMM", "RDAMVM3s93p9xrCIY"] {
+            let mut mix = state();
+            mix.playlist_id = Some(list.into());
+            mix.url = mix.watch_url().to_string();
+            mix.validate().unwrap();
+            assert!(mix.url.contains("v=aqz-KE-bpKQ"));
+            assert!(mix.url.contains("start_radio=1"));
+            assert!(mix.url.contains("index=3"));
+            mix.playlist_index = None;
+            mix.url = mix.watch_url().to_string();
+            mix.validate().unwrap();
+            assert!(!mix.url.contains("index="));
+            let checkpoint = persistence::SavedPlayback::browser(mix);
+            let decoded: persistence::SavedPlayback =
+                serde_json::from_str(&serde_json::to_string(&checkpoint).unwrap()).unwrap();
+            if let persistence::Source::Youtube { playback } = decoded.source {
+                playback.validate().unwrap();
+                assert_eq!(playback.playlist_id.as_deref(), Some(list));
+            } else {
+                panic!("Mix checkpoint lost its YouTube source");
+            }
+        }
     }
 }
