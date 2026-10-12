@@ -466,9 +466,12 @@ impl Worker {
     }
 }
 
-pub fn run(receiver: mpsc::Receiver<Request>) {
+pub fn run(receiver: mpsc::Receiver<Request>, shutdown: CancellationToken) -> PlaybackSnapshot {
     let mut worker = Worker::new(Box::<CpalBackend>::default());
     loop {
+        if shutdown.is_cancelled() {
+            break;
+        }
         let request = if worker.active.is_some() || worker.queue_running {
             match receiver.recv_timeout(Duration::from_millis(4)) {
                 Ok(request) => Some(request),
@@ -476,12 +479,16 @@ pub fn run(receiver: mpsc::Receiver<Request>) {
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         } else {
-            match receiver.recv() {
+            match receiver.recv_timeout(Duration::from_millis(100)) {
                 Ok(request) => Some(request),
-                Err(_) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
         };
         if let Some(request) = request {
+            if shutdown.is_cancelled() {
+                break;
+            }
             worker.update();
             if request.cancel.is_cancelled() {
                 let _ = request.reply.send(Err(
@@ -507,6 +514,12 @@ pub fn run(receiver: mpsc::Receiver<Request>) {
             worker.update();
         }
     }
+    // Retain the last audible clock without reading/decode after cancellation.
+    if let Some(active) = &mut worker.active {
+        let _ = active.clock.update(&mut active.timing, Instant::now());
+        worker.snapshot.position_seconds = active.clock.position;
+    }
+    worker.snapshot.clone()
 }
 
 #[cfg(test)]

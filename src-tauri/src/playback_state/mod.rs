@@ -1,6 +1,7 @@
 //! Shared browser and local audio playback vocabulary.
 
 use serde::{Deserialize, Serialize};
+pub mod persistence;
 
 /// Public page identity and HTML media state; never stream URLs or cookies.
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -77,7 +78,7 @@ impl BrowserPlayback {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PlaybackMode {
     #[default]

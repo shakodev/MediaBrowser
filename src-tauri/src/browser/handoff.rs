@@ -139,7 +139,7 @@ fn engine_progress(baseline: &PlaybackSnapshot, state: &PlaybackSnapshot) -> Res
     Ok(state.position_seconds > baseline.position_seconds + 0.02)
 }
 
-fn restore_target(audio: &PlaybackSnapshot) -> Result<BrowserPlayback, String> {
+pub(crate) fn restore_target(audio: &PlaybackSnapshot) -> Result<BrowserPlayback, String> {
     let metadata = audio
         .metadata
         .as_ref()

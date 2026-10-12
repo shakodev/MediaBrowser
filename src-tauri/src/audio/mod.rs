@@ -48,9 +48,12 @@ pub struct AudioEngine {
 #[derive(Default)]
 struct Control {
     cancel: Mutex<CancellationToken>,
+    shutdown: CancellationToken,
+    worker: Mutex<Option<std::thread::JoinHandle<PlaybackSnapshot>>>,
 }
 impl Drop for Control {
     fn drop(&mut self) {
+        self.shutdown.cancel();
         if let Ok(token) = self.cancel.lock() {
             token.cancel();
         }
@@ -60,14 +63,14 @@ impl Drop for Control {
 impl AudioEngine {
     pub fn new() -> Result<Self, String> {
         let (sender, receiver) = mpsc::sync_channel(16);
-        std::thread::Builder::new()
+        let control = Arc::new(Control::default());
+        let shutdown = control.shutdown.clone();
+        let worker = std::thread::Builder::new()
             .name("audio-decoder".into())
-            .spawn(move || worker::run(receiver))
+            .spawn(move || worker::run(receiver, shutdown))
             .map_err(|e| e.to_string())?;
-        Ok(Self {
-            sender,
-            control: Arc::default(),
-        })
+        *control.worker.lock().unwrap() = Some(worker);
+        Ok(Self { sender, control })
     }
 
     async fn request(&self, operation: Operation) -> Result<PlaybackSnapshot, String> {
@@ -78,6 +81,9 @@ impl AudioEngine {
                 .cancel
                 .lock()
                 .map_err(|_| "Audio control lock failed.")?;
+            if self.control.shutdown.is_cancelled() {
+                return Err("Audio worker has shut down.".into());
+            }
             let disruptive = matches!(
                 operation,
                 Operation::Load(_)
@@ -184,5 +190,32 @@ impl AudioEngine {
     }
     pub async fn snapshot(&self) -> Result<PlaybackSnapshot, String> {
         self.request(Operation::Snapshot).await
+    }
+
+    /// Cancel blocking network/resolver work before joining the worker. The join
+    /// acknowledges that CPAL, decoders, prefetch and temporary queues are gone.
+    pub async fn shutdown(&self) -> Result<PlaybackSnapshot, String> {
+        {
+            let current = self
+                .control
+                .cancel
+                .lock()
+                .map_err(|_| "Audio control lock failed.")?;
+            self.control.shutdown.cancel();
+            current.cancel();
+        }
+        let worker = self
+            .control
+            .worker
+            .lock()
+            .map_err(|_| "Audio worker lock failed.")?
+            .take();
+        match worker {
+            Some(worker) => tauri::async_runtime::spawn_blocking(move || worker.join())
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|_| "Audio worker panicked during shutdown.".into()),
+            None => Err("Audio worker has already shut down.".into()),
+        }
     }
 }
