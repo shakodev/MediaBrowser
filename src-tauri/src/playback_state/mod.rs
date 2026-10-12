@@ -28,6 +28,8 @@ pub enum PlaybackStatus {
 pub struct PlaybackSnapshot {
     pub status: PlaybackStatus,
     pub path: Option<String>,
+    pub metadata: Option<crate::resolver::VideoMetadata>,
+    pub transfer: Option<crate::audio::TransferSnapshot>,
     pub position_seconds: f64,
     pub duration_seconds: Option<f64>,
     pub volume: f32,
@@ -39,6 +41,8 @@ impl Default for PlaybackSnapshot {
         Self {
             status: PlaybackStatus::Stopped,
             path: None,
+            metadata: None,
+            transfer: None,
             position_seconds: 0.0,
             duration_seconds: None,
             volume: 1.0,

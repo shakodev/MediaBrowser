@@ -1,10 +1,12 @@
 use super::{
-    decoder::LocalDecoder,
+    decoder::AudioDecoder,
+    http::{HttpSource, TransferStats},
     output::{Backend, CpalBackend, Frame, OutputStream, Renderer, Span, Timeline},
     resample::Resampler,
     Operation, Request,
 };
 use crate::playback_state::{PlaybackSnapshot, PlaybackStatus as Status};
+use crate::resolver::{ResolvedStream, StreamResolver, YtDlpResolver};
 use rtrb::{Consumer, Producer, RingBuffer};
 use std::{
     path::PathBuf,
@@ -14,11 +16,13 @@ use std::{
     },
     time::{Duration, Instant},
 };
+use tokio_util::sync::CancellationToken;
+use url::Url;
 
 struct Active {
     // Drop the stream first, before releasing its queues/decoder.
     _stream: Option<Box<dyn OutputStream>>,
-    decoder: LocalDecoder,
+    decoder: AudioDecoder,
     resampler: Resampler,
     pcm: Producer<Frame>,
     timing: Consumer<Span>,
@@ -33,7 +37,7 @@ struct Active {
 
 impl Active {
     fn open(
-        decoder: LocalDecoder,
+        decoder: AudioDecoder,
         position: f64,
         volume: Arc<AtomicU32>,
         backend: &mut dyn Backend,
@@ -118,9 +122,18 @@ impl Active {
     }
 }
 
+struct YoutubeTrack {
+    url: Url,
+    stream: ResolvedStream,
+    stats: Arc<TransferStats>,
+}
+
 struct Worker {
     snapshot: PlaybackSnapshot,
     path: Option<PathBuf>,
+    youtube: Option<YoutubeTrack>,
+    resolver: Arc<dyn StreamResolver>,
+    cancel: CancellationToken,
     volume: Arc<AtomicU32>,
     active: Option<Active>,
     backend: Box<dyn Backend>,
@@ -131,14 +144,30 @@ impl Worker {
         Self {
             snapshot: PlaybackSnapshot::default(),
             path: None,
+            youtube: None,
+            resolver: Arc::new(YtDlpResolver::default()),
+            cancel: CancellationToken::new(),
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             active: None,
             backend,
         }
     }
     fn update(&mut self) {
+        if let Some(track) = &self.youtube {
+            self.snapshot.transfer = Some(track.stats.snapshot());
+        }
         if let Some(active) = &mut self.active {
+            if active.decoder.is_cancelled() {
+                let _ = active.clock.update(&mut active.timing, Instant::now());
+                self.snapshot.position_seconds = active.clock.position;
+                return;
+            }
             let result = active.tick();
+            if active.decoder.is_cancelled() {
+                let _ = active.clock.update(&mut active.timing, Instant::now());
+                self.snapshot.position_seconds = active.clock.position;
+                return;
+            }
             self.snapshot.position_seconds = active.clock.position;
             match result {
                 Ok(true) => {
@@ -158,14 +187,35 @@ impl Worker {
         self.snapshot.error = Some(error);
     }
     fn start(&mut self, position: f64) -> Result<(), String> {
-        let path = self.path.as_ref().ok_or("Load a local audio file first.")?;
-        let mut decoder = LocalDecoder::open(path)?;
+        let mut decoder = self.open_decoder()?;
         if position > 0.0 {
             decoder.seek(position)?;
         }
         self.start_decoder(decoder, position)
     }
-    fn start_decoder(&mut self, decoder: LocalDecoder, position: f64) -> Result<(), String> {
+    fn open_decoder(&self) -> Result<AudioDecoder, String> {
+        if let Some(track) = &self.youtube {
+            let source = HttpSource::open(
+                track.url.clone(),
+                track.stream.clone(),
+                self.resolver.clone(),
+                self.cancel.clone(),
+                track.stats.clone(),
+            )?;
+            AudioDecoder::from_source(
+                Box::new(source),
+                &track.stream.extension,
+                Some(self.cancel.clone()),
+            )
+        } else {
+            AudioDecoder::open(
+                self.path
+                    .as_ref()
+                    .ok_or("Load an audio file or YouTube video first.")?,
+            )
+        }
+    }
+    fn start_decoder(&mut self, decoder: AudioDecoder, position: f64) -> Result<(), String> {
         let active = Active::open(
             decoder,
             position,
@@ -182,18 +232,55 @@ impl Worker {
         match operation {
             Operation::Load(path) => {
                 // Validate before replacing a currently playing track.
-                let mut decoder = LocalDecoder::open(&path)?;
+                let mut decoder = AudioDecoder::open(&path)?;
                 decoder.next_block()?.ok_or("Audio file is empty.")?;
                 self.active = None;
                 self.snapshot.path = Some(path.to_string_lossy().into_owned());
                 self.path = Some(path);
+                self.youtube = None;
+                self.snapshot.metadata = None;
+                self.snapshot.transfer = None;
                 self.snapshot.position_seconds = 0.0;
                 self.snapshot.duration_seconds = decoder.duration;
                 self.snapshot.status = Status::Paused;
                 self.snapshot.error = None;
             }
+            Operation::LoadYoutube(url) => {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|_| "Cannot start resolver runtime.")?;
+                let stream = runtime.block_on(async {
+                    tokio::select! { biased; _ = self.cancel.cancelled() => Err("Audio request cancelled.".into()), result = self.resolver.resolve(&url) => result }
+                })?;
+                let stats = Arc::new(TransferStats::default());
+                let source = HttpSource::open(
+                    url.clone(),
+                    stream.clone(),
+                    self.resolver.clone(),
+                    self.cancel.clone(),
+                    stats.clone(),
+                )?;
+                let mut decoder = AudioDecoder::from_source(
+                    Box::new(source),
+                    &stream.extension,
+                    Some(self.cancel.clone()),
+                )?;
+                decoder.next_block()?.ok_or("Audio stream is empty.")?;
+                self.active = None;
+                self.path = None;
+                self.snapshot.path = Some(url.to_string());
+                self.snapshot.metadata = Some(stream.metadata.clone());
+                self.snapshot.duration_seconds =
+                    decoder.duration.or(stream.metadata.duration_seconds);
+                self.snapshot.transfer = Some(stats.snapshot());
+                self.youtube = Some(YoutubeTrack { url, stream, stats });
+                self.snapshot.position_seconds = 0.0;
+                self.snapshot.status = Status::Paused;
+                self.snapshot.error = None;
+            }
             Operation::Play => {
-                if self.path.is_none() {
+                if self.path.is_none() && self.youtube.is_none() {
                     return Err("Load a local audio file first.".into());
                 }
                 if self.snapshot.status != Status::Playing {
@@ -227,14 +314,14 @@ impl Worker {
                         "Seek position must be a finite, non-negative number of seconds.".into(),
                     );
                 }
-                let path = self.path.as_ref().ok_or("Load a local audio file first.")?;
+
                 let position = self
                     .snapshot
                     .duration_seconds
                     .map_or(seconds, |d| seconds.min(d));
                 // Failed seeks preserve the previous transport. Reopen/reset/discard
                 // all PCM on successful seeks; stale samples can never reach a new stream.
-                let mut decoder = LocalDecoder::open(path)?;
+                let mut decoder = self.open_decoder()?;
                 decoder.seek(position)?;
                 let playing = self.snapshot.status == Status::Playing;
                 self.active = None;
@@ -284,7 +371,27 @@ pub fn run(receiver: mpsc::Receiver<Request>) {
             }
         };
         if let Some(request) = request {
-            let _ = request.reply.send(worker.command(request.operation));
+            worker.update();
+            if request.cancel.is_cancelled() {
+                let _ = request.reply.send(Err(
+                    "Audio request superseded by a newer transport command.".into(),
+                ));
+                continue;
+            }
+            worker.cancel = request.cancel;
+            // Volume and snapshots retain the active token. Transport commands use a fresh one.
+
+            let result = worker.command(request.operation);
+            if result.is_err()
+                && worker
+                    .active
+                    .as_ref()
+                    .is_some_and(|a| a.decoder.is_cancelled())
+            {
+                worker
+                    .fail("Playback interrupted; press Play to resume the previous track.".into());
+            }
+            let _ = request.reply.send(result);
         } else {
             worker.update();
         }
