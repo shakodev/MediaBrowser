@@ -1,4 +1,6 @@
 pub mod audio;
+#[cfg(feature = "memory-benchmark")]
+mod benchmark;
 mod browser;
 mod desktop;
 mod media_keys;
@@ -24,6 +26,8 @@ pub fn run() {
             app.manage(browser::BrowserState::load(state_path));
             app.manage(audio::AudioEngine::new()?);
             desktop::setup(app)?;
+            #[cfg(feature = "memory-benchmark")]
+            benchmark::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -56,6 +56,10 @@ pub(crate) fn exit_ready(app: &AppHandle) -> bool {
 }
 
 pub(crate) fn data_dir(app: &AppHandle) -> tauri::Result<PathBuf> {
+    #[cfg(feature = "memory-benchmark")]
+    if let Some(path) = std::env::var_os("MEDIABROWSER_BENCH_DIR") {
+        return Ok(PathBuf::from(path).join("state"));
+    }
     app.path().app_data_dir()
 }
 
@@ -212,6 +216,12 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
 }
 
 async fn restore_checkpoint(app: &AppHandle) -> Result<(), String> {
+    #[cfg(feature = "memory-benchmark")]
+    if std::env::var_os("MEDIABROWSER_BENCH_DIR").is_some()
+        && std::env::var_os("MEDIABROWSER_BENCH_RESUME").is_none()
+    {
+        return Ok(());
+    }
     let browser = app.state::<BrowserState>();
     let _guard = browser.transition.write().await;
     let saved = SavedPlayback::load(&app.state::<Desktop>().path)?;
