@@ -10,6 +10,7 @@ pub fn run() {
         .setup(|app| {
             let state_path = app.path().app_data_dir()?.join("browser-state.json");
             app.manage(browser::BrowserState::load(state_path));
+            app.manage(audio::AudioEngine::new()?);
             tauri::WebviewWindowBuilder::from_config(app, &app.config().app.windows[0])?
                 .on_navigation(browser::is_local_url)
                 .build()?;
@@ -20,6 +21,13 @@ pub fn run() {
             browser::open_browser,
             browser::navigate_browser,
             browser::browser_action,
+            audio::commands::audio_load,
+            audio::commands::audio_play,
+            audio::commands::audio_pause,
+            audio::commands::audio_stop,
+            audio::commands::audio_seek,
+            audio::commands::audio_volume,
+            audio::commands::audio_snapshot,
         ])
         .on_window_event(|window, event| {
             if window.label() == "controller" && matches!(event, tauri::WindowEvent::Destroyed) {

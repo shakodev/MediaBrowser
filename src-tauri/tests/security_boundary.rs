@@ -30,7 +30,29 @@ fn only_local_control_webviews_receive_command_permissions() {
     let config: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
     assert_eq!(
         config["app"]["security"]["capabilities"],
-        serde_json::json!(["local-controls"])
+        serde_json::json!(["local-controls", "local-audio"])
     );
     assert_eq!(config["app"]["withGlobalTauri"], false);
+}
+
+#[test]
+fn local_audio_permissions_are_controller_only() {
+    let capability: Value =
+        serde_json::from_str(include_str!("../capabilities/local-audio.json")).unwrap();
+    assert_eq!(capability["local"], true);
+    assert!(capability.get("remote").is_none());
+    assert!(capability.get("windows").is_none());
+    assert_eq!(capability["webviews"], serde_json::json!(["controller"]));
+    assert_eq!(
+        capability["permissions"],
+        serde_json::json!([
+            "allow-audio-load",
+            "allow-audio-play",
+            "allow-audio-pause",
+            "allow-audio-stop",
+            "allow-audio-seek",
+            "allow-audio-volume",
+            "allow-audio-snapshot"
+        ])
+    );
 }

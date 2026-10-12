@@ -636,6 +636,35 @@ h3 {
     padding-inline: 20px;
   }
 }
+.local-player {
+  border-top: 1px solid #292e2b;
+  padding: 16px 24px;
+  background: #171a1b;
+  font-size: 11px;
+}
+.local-audio-heading, .local-file-form, .local-transport, .local-seek, .volume-control, #audio-seek {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.local-audio-heading { justify-content: space-between; margin-bottom: 10px; }
+#audio-status { color: #9ba99a; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 70%; }
+.local-player input:not([type="range"]) {
+  min-width: 0;
+  background: #101415;
+  border: 1px solid #353d37;
+  border-radius: 5px;
+  padding: 8px;
+}
+#audio-path { flex: 1; }
+.local-transport { margin: 12px 0; flex-wrap: wrap; }
+.local-player button { border-radius: 5px; padding: 8px 12px; }
+.volume-control { margin-left: auto; }
+#audio-volume { width: 90px; }
+.local-player input[type="range"] { accent-color: #b8e78d; }
+#audio-progress { flex: 1; min-width: 60px; }
+#audio-seconds { width: 90px; }
+.local-player .error-message:empty { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

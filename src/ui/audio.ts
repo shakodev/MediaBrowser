@@ -1,0 +1,90 @@
+import { audio, type PlaybackSnapshot } from "../api/audio";
+import { errorMessage } from "../api/browser";
+
+export function mountAudio(root: HTMLElement): void {
+  root.innerHTML = `
+    <div class="local-audio-heading"><strong>Local playback</strong><span id="audio-status" role="status">Load an MP3, AAC or M4A file</span></div>
+    <form id="audio-load" class="local-file-form"><label class="sr-only" for="audio-path">Local audio file path</label><input id="audio-path" placeholder="C:\\Music\\track.m4a" autocomplete="off" spellcheck="false" required><button type="submit" class="primary">Load file</button></form>
+    <div class="local-transport"><button id="audio-play" class="primary" disabled>Play</button><button id="audio-pause" disabled>Pause</button><button id="audio-stop" disabled>Stop</button><output id="audio-time">0:00 / —</output><label class="volume-control">Volume <input id="audio-volume" type="range" min="0" max="1" step="0.01" value="1"></label></div>
+    <div class="local-seek"><label class="sr-only" for="audio-progress">Playback position</label><input id="audio-progress" type="range" min="0" max="1" step="0.01" value="0" disabled><form id="audio-seek"><label class="sr-only" for="audio-seconds">Seek to seconds</label><input id="audio-seconds" type="number" min="0" step="0.01" placeholder="Seconds" aria-label="Seek to seconds" required><button disabled>Seek</button></form></div>
+    <p id="audio-error" class="error-message" role="status" aria-live="polite"></p>`;
+  const path = root.querySelector<HTMLInputElement>("#audio-path")!;
+  const progress = root.querySelector<HTMLInputElement>("#audio-progress")!;
+  const volume = root.querySelector<HTMLInputElement>("#audio-volume")!;
+  const error = root.querySelector<HTMLElement>("#audio-error")!;
+  let busy = false;
+  let revision = 0;
+  let disposed = false;
+  let dragging = false;
+  let state: PlaybackSnapshot | undefined;
+  let timer: ReturnType<typeof setTimeout>;
+
+  function render(next: PlaybackSnapshot): void {
+    state = next;
+    root.querySelector("#audio-status")!.textContent = next.path
+      ? `${next.status} · ${next.path.split(/[\\/]/).pop()}`
+      : "Load an MP3, AAC or M4A file";
+    root.querySelector("#audio-time")!.textContent = `${time(next.positionSeconds)} / ${next.durationSeconds === null ? "—" : time(next.durationSeconds)}`;
+    progress.disabled = busy || next.durationSeconds === null || !next.path;
+    progress.max = String(next.durationSeconds ?? 1);
+    if (!dragging) progress.value = String(next.positionSeconds);
+    if (document.activeElement !== volume) volume.value = String(next.volume);
+    for (const button of root.querySelectorAll<HTMLButtonElement>("button")) {
+      button.disabled = busy || (button.closest("#audio-load") === null && !next.path);
+    }
+    root.querySelector<HTMLButtonElement>("#audio-pause")!.disabled = busy || next.status !== "playing";
+    root.querySelector<HTMLButtonElement>("#audio-play")!.disabled = busy || !next.path || next.status === "playing";
+    if (next.error) error.textContent = next.error;
+  }
+  async function perform(action: () => Promise<PlaybackSnapshot>): Promise<void> {
+    if (busy) return;
+    busy = true;
+    revision++;
+    error.textContent = "";
+    if (state) render(state);
+    try {
+      const next = await action();
+      busy = false;
+      render(next);
+    } catch (cause) {
+      busy = false;
+      if (state) render(state);
+      error.textContent = errorMessage(cause);
+    }
+  }
+  root.querySelector("#audio-load")!.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void perform(() => audio.load(path.value.trim().replace(/^"|"$/g, "")));
+  });
+  root.querySelector("#audio-play")!.addEventListener("click", () => void perform(audio.play));
+  root.querySelector("#audio-pause")!.addEventListener("click", () => void perform(audio.pause));
+  root.querySelector("#audio-stop")!.addEventListener("click", () => void perform(audio.stop));
+  volume.addEventListener("change", () => void perform(() => audio.volume(Number(volume.value))));
+  progress.addEventListener("pointerdown", () => { dragging = true; });
+  progress.addEventListener("pointerup", () => { dragging = false; });
+  progress.addEventListener("pointercancel", () => { dragging = false; });
+  progress.addEventListener("change", () => void perform(() => audio.seek(Number(progress.value))));
+  root.querySelector("#audio-seek")!.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void perform(() => audio.seek(Number(root.querySelector<HTMLInputElement>("#audio-seconds")!.value)));
+  });
+  async function poll(): Promise<void> {
+    const current = revision;
+    try {
+      if (!busy && !document.hidden) {
+        const next = await audio.snapshot();
+        if (current === revision) render(next);
+      }
+    } catch {
+      error.textContent = "Launch the desktop app to use local audio playback.";
+    }
+    if (!disposed) timer = setTimeout(() => void poll(), state?.status === "playing" ? 250 : 1000);
+  }
+  window.addEventListener("pagehide", () => { disposed = true; clearTimeout(timer); }, { once: true });
+  void poll();
+}
+
+function time(seconds: number): string {
+  const whole = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}

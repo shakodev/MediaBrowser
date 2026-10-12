@@ -5,6 +5,7 @@ import {
   watchBrowser,
 } from "../api/browser";
 import { icon } from "./icons";
+import { mountAudio } from "./audio";
 
 export function mountController(root: HTMLDivElement): void {
   root.innerHTML = `
@@ -27,9 +28,11 @@ export function mountController(root: HTMLDivElement): void {
           <section class="session-section"><div class="section-heading"><h3>Browsing session</h3><span id="session-status">Ready when you are</span></div><div class="session-card"><span class="session-icon">${icon("browser")}</span><div class="session-details"><strong id="page-title">YouTube</strong><span id="current-url">https://www.youtube.com/</span></div><button class="icon-button" id="resume" aria-label="Open last visited page" title="Open last visited page">${icon("external")}</button></div><p class="session-note">Your last YouTube page is remembered automatically.</p></section>
           <p class="error-message" id="error" role="status" aria-live="polite"></p>
         </main>
-        <footer class="player"><div class="player-track"><span class="track-art">${icon("music")}</span><div><strong>Playback lives in YouTube</strong><span>Native audio controls are coming later</span></div></div><div class="transport" aria-label="Native playback is not implemented"><button disabled aria-label="Previous track">${icon("previous")}</button><button class="play-button" disabled aria-label="Native playback unavailable">${icon("play")}</button><button disabled aria-label="Next track">${icon("next")}</button></div><span class="browser-badge">BROWSER MODE</span></footer>
+        <footer class="local-player" id="local-player" aria-label="Local audio playback"></footer>
       </div>
     </div>`;
+
+  mountAudio(root.querySelector<HTMLElement>("#local-player")!);
 
   const open = root.querySelector<HTMLButtonElement>("#open-browser")!;
   const resume = root.querySelector<HTMLButtonElement>("#resume")!;

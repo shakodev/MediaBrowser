@@ -6,6 +6,13 @@ fn main() {
             "open_browser",
             "navigate_browser",
             "browser_action",
+            "audio_load",
+            "audio_play",
+            "audio_pause",
+            "audio_stop",
+            "audio_seek",
+            "audio_volume",
+            "audio_snapshot",
         ]),
     ))
     .expect("failed to build Tauri application metadata");

@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-audio",
+  "description": "Local-file playback is available only to the bundled controller.",
+  "local": true,
+  "webviews": ["controller"],
+  "permissions": [
+    "allow-audio-load", "allow-audio-play", "allow-audio-pause", "allow-audio-stop",
+    "allow-audio-seek", "allow-audio-volume", "allow-audio-snapshot"
+  ]
+}
