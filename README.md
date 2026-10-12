@@ -27,7 +27,7 @@ The executable is `src-tauri/target/release/media-browser.exe`. Installer packag
 - Last committed YouTube URL is atomically saved under `%APPDATA%/com.mediabrowser.desktop/browser-state.json` and restored when the browser is next opened. Consent and sign-in URLs never replace the saved YouTube URL.
 - Closing either window destroys its views and leaves the native tray available. Use tray **Quit** to terminate the app.
 - Local MP3, AAC (ADTS), and AAC-LC M4A playback through a custom Rust engine. Paste a file path into **Local playback**, load it, then use Play/Pause/Stop, volume, the position slider, or a seek time in seconds. Quoted Windows paths are accepted.
-- YouTube playlist playback with automatic advancement, previous/next, track selection, shuffle, repeat off/all/one, and a paged track list with current-track metadata.
+- YouTube playlist and Mix/radio playback with automatic advancement, previous/next, track selection, shuffle, repeat off/all/one, and a paged track list with current-track metadata.
 - RAM Saver buttons in the controller and browser toolbar hand the current public video or playlist track to the Rust engine. Browser Mode restores the current audio track and position.
 - RAM Saver destroys every WebView window. A native Windows tray provides play/pause, next/previous, volume, browser reopening and clean Quit; Windows media keys use SMTC.
 - Playback checkpoints restore RAM Saver paused without starting WebView2. See [tray lifecycle, persistence, benchmark instructions and limitations](docs/ram-saver.md).
@@ -36,11 +36,13 @@ The executable is `src-tauri/target/release/media-browser.exe`. Installer packag
 
 Open a public YouTube video, then press **RAM Saver** in either window. Rust requests a small, on-demand playback snapshot: video ID, public `list` ID, one-based `index`, current media timestamp, effective volume (zero when muted), and paused state. Native WebView2 navigation events continue to track SPA changes. The snapshot checks the current URL against the loaded player identity; ads, live streams, loading players and stale SPA state fail safely. The remote webview has no Tauri permissions or application message bridge. The integration does not read cookies or expose filesystem access or audio stream URLs. This integration reads only the current player and HTML media element, never YouTube's internal autoplay queue.
 
-For a playlist, yt-dlp extracts public flat metadata into the existing disk-backed queue. The captured index and video ID select the exact occurrence; original playlist indexes are retained when provided by yt-dlp. If hidden entries shifted extraction order, a unique video ID can recover the track. Missing videos or ambiguous duplicates produce an error. The initial transfer never plays the playlist's first track or skips an unsuccessful current track. Mix/radio (`RD`), Watch Later and liked-video queues are rejected; single videos remain single tracks.
+For a playlist, yt-dlp extracts public flat metadata into the existing disk-backed queue. The captured index and video ID select the exact occurrence; original playlist indexes are retained when provided by yt-dlp. If hidden entries shifted extraction order, a unique video ID can recover the track. Mix/radio (`RD`) URLs load a snapshot of up to 50 recommendations around the current watch video. Mix handoff locates the current video by ID because regenerated recommendations can change indexes. Missing videos or ambiguous duplicates produce an error. The initial transfer never plays a different track or skips an unsuccessful current track. Watch Later and liked-video queues are rejected; single videos remain single tracks.
 
 Resolution runs while browser playback continues. A fresh capture then rechecks identity and timestamp. The Rust engine seeks and starts muted, with queue advancement suspended. The transfer requires its device-timed playback clock to advance before pausing YouTube, applying volume and closing the remote WebView2 view and browser window. Paused browser playback stays paused after this output check. Navigation, seeks or playback changes during preparation, resolver/network/decoder/device failures, or a failed confirmation leave Browser Mode active and show an error. A failed commit pauses Rust and resumes browser media if the transfer paused it.
 
 Choose **Reopen browser** from the tray (or double-click it) to restore the current Rust track, public playlist, original index, position, volume and paused state. This uses the current queue entry, including tracks reached with Next/Previous or automatic advancement. The new WebView2 is muted at the native level during restoration, including any ads. Rust continues playing until YouTube confirms the target video, seek and playback progress; only then is Rust paused and the browser unmuted. On failure the new browser is closed and Rust remains available. A stopped or paused Rust track restores paused. Replacing audio with a local file restores the remembered browser page instead.
+
+Mix restoration keeps the radio ID and current video, omitting the snapshot's index so YouTube can regenerate its recommendations. Mix checkpoints likewise rebuild recommendations around the saved current track on restart; the exact recommendation order is not preserved.
 
 MVP limitations: only publicly resolvable, non-live videos and playlists supported by the existing AAC/M4A engine; no authenticated extraction, internal autoplay queue, YouTube shuffle/repeat synchronization, or seamless/gapless switching. YouTube DOM/player changes, consent, ads, autoplay restrictions, changed playlists and slow seeks can prevent a transfer; the current source remains available for retry. Position checks allow up to two seconds of startup drift. Checkpoints retain track/playlist context and shuffle/repeat preferences, but playlist contents and shuffle order are rebuilt on restart.
 
@@ -49,6 +51,8 @@ Automated checks cover capture and SPA races, ads/unsupported pages, playback-co
 ## Playlists
 
 Paste a public YouTube playlist URL (or a watch URL containing `list=`) into the playlist field and press **Play playlist**. The app extracts flat metadata first, then starts the first playable track. Select any track from the list; use the page controls to browse long playlists or **Show current track** to locate playback. Pause and Stop suspend automatic advancement. Loading a single video or local file replaces the queue.
+
+YouTube Mix/radio links work in the same field, for example `https://www.youtube.com/watch?v=3s93p9xrCIY&list=RD3s93p9xrCIY&start_radio=1`. Use the watch URL to retain the seed video; plain `playlist?list=RD<video-id>` links also work. Mixes load up to 50 tracks into a finite queue, with a 120-second extraction deadline. Playback stops at the end unless repeat is enabled. Reload the Mix for fresh recommendations; continuous radio replenishment and signed-in personalization are not implemented. Regular playlists keep their full extraction behavior.
 
 `resolver/playlist.rs` runs yt-dlp with `--flat-playlist --lazy-playlist --skip-download` and a compact JSON projection, reading one line at a time with a 16 KiB cap and a 60-second inactivity timeout. Missing optional fields and unavailable entries are retained. The Rust queue stores metadata and failure flags in a temporary file using fixed 4 KiB records, with no growing in-memory index. The file uses Windows delete-on-close and is released when replacing the queue or exiting. Disk usage grows with track count; free disk space is required. Loading waits for metadata extraction to complete before playback starts.
 
@@ -62,9 +66,12 @@ Metadata-only live verification (no audio resolution or playback):
 
 ```powershell
 cargo run --manifest-path src-tauri/Cargo.toml --example playlist_smoke -- 'https://www.youtube.com/playlist?list=YOUR_PLAYLIST_ID'
+cargo run --manifest-path src-tauri/Cargo.toml --example playlist_smoke -- 'https://www.youtube.com/watch?v=3s93p9xrCIY&list=RD3s93p9xrCIY&start_radio=1'
 ```
 
 Verified on 12 October 2026 with yt-dlp 2026.08.19: the public **Data Analysis with Dr Mike Pound** playlist produced 11 indexed tracks, with successful first-page and final-record reads. Tests cover sequential/shuffled traversal, repeat, manual selection, backward failure recovery, automatic advancement, unavailable resolution and runtime failures, retry, cancellation, prefetch expiry/reaping, metadata limits and 10,000-track bounded paging. Live playlist audio transitions have not been manually listened to.
+
+Mix metadata verified on 12 October 2026 using the example above through the Rust resolver: **Mix - Chiwa - Nightlife** returned exactly 50 tracks, with 40 on the first page and a successful final-record read. Regression tests cover seed preservation, RD variants, missing/mismatched Mix metadata, extraction bounds, browser capture, radio restoration and checkpoint context. Mix audio handoff and transitions have not been manually listened to.
 
 ## Structure and security
 
