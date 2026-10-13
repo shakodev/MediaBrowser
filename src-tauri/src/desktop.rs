@@ -362,6 +362,11 @@ async fn refresh(app: &AppHandle, checkpoint: bool) {
         return;
     };
     if let Ok(snapshot) = app.state::<AudioEngine>().snapshot().await {
+        if let Some(error) = snapshot.error.as_deref() {
+            if browser.get().error.as_deref() != Some(error) {
+                report(app, error);
+            }
+        }
         update_controls(app, &snapshot);
         if checkpoint {
             let result = if browser.get().mode == PlaybackMode::RamSaver

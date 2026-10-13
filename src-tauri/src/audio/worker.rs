@@ -191,40 +191,34 @@ impl Worker {
         }
         if self.queue_running
             && !self.cancel.is_cancelled()
-            && matches!(self.snapshot.status, Status::Ended | Status::Error)
+            && self.snapshot.status == Status::Ended
         {
-            let failed = self.snapshot.status == Status::Error;
             let next = if let Some(queue) = &mut self.queue {
-                if failed {
-                    queue.failed()
-                } else {
-                    queue.consecutive_failures = 0;
-                    Ok(queue.order.next(true, false))
-                }
+                queue.consecutive_failures = 0;
+                queue.order.next(true, false)
             } else {
-                Ok(None)
+                None
             };
             match next {
-                Ok(Some(index)) => {
+                Some(index) => {
                     if let Err(error) = self.play_queue(index) {
                         self.queue_running = false;
                         self.fail(error);
                     }
                 }
-                Ok(None) => {
+                None => {
                     self.queue_running = false;
                     self.prefetch = None;
-                }
-                Err(error) => {
-                    self.queue_running = false;
-                    self.prefetch = None;
-                    self.fail(error);
                 }
             }
         }
     }
     fn fail(&mut self, error: String) {
         self.active = None;
+        // A stream/device failure does not make the song unavailable. Keep its
+        // audible position for Play to retry instead of silently skipping it.
+        self.queue_running = false;
+        self.prefetch = None;
         self.snapshot.status = Status::Error;
         self.snapshot.error = Some(error);
     }

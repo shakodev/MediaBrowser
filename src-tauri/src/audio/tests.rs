@@ -509,7 +509,7 @@ fn test_queue(len: u64, unavailable: Option<u64>) -> Queue {
 }
 
 #[test]
-fn playlist_skips_resolution_and_runtime_failures_then_recovers_on_manual_retry() {
+fn playlist_skips_unavailable_entries_but_preserves_runtime_failures_for_retry() {
     let server =
         super::super::http::tests::Server::new(std::fs::read(fixture("m4a")).unwrap(), "ok");
     let resolver = Arc::new(QueueResolver {
@@ -530,13 +530,42 @@ fn playlist_skips_resolution_and_runtime_failures_then_recovers_on_manual_retry(
     );
     assert!(pump(&mut worker, &renderer).iter().any(|v| v.abs() > 0.001));
     assert!(!resolver.calls.lock().unwrap().contains(&0));
-    // A mid-stream decoder/device failure advances automatically without a UI command.
-    worker.prefetch = None;
-    worker.fail("Injected decoder failure".into());
+    // A mid-stream device failure preserves the song and audible position.
+    let position = worker.snapshot.position_seconds;
+    renderer
+        .borrow()
+        .as_ref()
+        .unwrap()
+        .failed
+        .store(true, Ordering::Release);
     worker.update();
-    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(3));
+    worker.update();
+    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(2));
+    assert_eq!(worker.snapshot.status, Status::Error);
+    assert!(worker
+        .snapshot
+        .error
+        .as_deref()
+        .unwrap()
+        .contains("Audio output failed"));
+    assert_eq!(worker.snapshot.position_seconds, position);
+    assert_eq!(worker.queue.as_ref().unwrap().skipped, 2);
+    assert!(
+        !worker
+            .queue
+            .as_mut()
+            .unwrap()
+            .playlist
+            .track(2)
+            .unwrap()
+            .failed
+    );
+    assert!(!worker.queue_running);
+    assert!(worker.prefetch.is_none());
+    worker.command(Operation::Play).unwrap();
+    assert_eq!(worker.queue.as_ref().unwrap().order.current(), Some(2));
     assert_eq!(worker.snapshot.status, Status::Playing);
-    assert_eq!(worker.queue.as_ref().unwrap().skipped, 3);
+    assert!(worker.queue_running);
     resolver.fail_mask.store(0, Ordering::Relaxed);
     let selected = worker
         .command(Operation::Queue(QueueAction::Select { index: 1 }))
