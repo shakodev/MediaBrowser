@@ -60,7 +60,7 @@ Rust and the UI retain at most one page of 40 tracks per snapshot. Shuffle compu
 
 Signed audio URLs remain in Rust. Only the current track and one cancellable next-track resolution are retained; prefetch downloads no audio. Prefetched results expire after 60 seconds and are resolved again on demand. Queue changes, pause, stop, seek, replacement and shutdown cancel or discard speculative work. Existing HTTP URL refresh handles rejected/expired playback URLs.
 
-Unavailable entries and resolution/decoding failures are marked and skipped in the requested direction. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. RAM Saver uses this same queue and checkpoints its public source, current occurrence and playback preferences.
+Unavailable entries and failures while opening a track are marked and skipped in the requested direction. Once playback starts, HTTP, decoder and device failures stop on the current track, retain its audible position, and show the error in the tray; Play retries that track. Only natural end advances automatically. Cancellation does not mark tracks failed. Repeat cannot create an endless all-unavailable loop: recovery stops after one unsuccessful pass and leaves the queue available for manual retry. YouTube may hide some unavailable entries entirely; only metadata returned by yt-dlp can appear. Playback retains the single-video engine's public, non-live AAC/M4A restrictions. Transitions are not gapless. RAM Saver uses this same queue and checkpoints its public source, current occurrence and playback preferences.
 
 Metadata-only live verification (no audio resolution or playback):
 
@@ -114,6 +114,15 @@ Paste a public YouTube watch, shorts, or youtu.be video URL into **Audio playbac
 Fast-start M4A uses progressive Symphonia initialization, then enables byte-range seeking, avoiding its eager scan of every MP4 fragment. Tail-metadata MP4 uses normal seekable probing. Symphonia still discovers fragmented MP4 seek indexes incrementally, so distant seeks can require reading intervening fragment headers and portions of media. Seeking/resuming reopens the stream at the audible position with decoder preroll. Empty buffers produce silence without moving media time. HTTP 401/403/410 triggers one re-resolution per range request and retries the same byte offset only if video ID, format, and length match; repeated failures or changed formats expose a safe retry/reload error. Reopening an expired stored URL can therefore resolve again.
 
 Private, sign-in/age/region restricted, live, DRM, HLS/DASH manifests, Opus/WebM-only videos, and streams requiring authentication or PO tokens are unsupported. YouTube can reject resolved URLs; update yt-dlp/Deno or try another public video. Dependencies are detected, not installed or updated by the app.
+
+If songs stop around a minute, check the yt-dlp version actually used by MediaBrowser (`MEDIABROWSER_YTDLP` overrides `PATH`), update it, and restart the app. On 13 October 2026, yt-dlp 2026.07.04 reproduced an HTTP 403 at 64.644 seconds on video `3s93p9xrCIY`, even after the engine re-resolved the stream. The official 2026.08.19 executable decoded and played that song past two minutes. Early successful requests therefore do not guarantee the resolver is compatible with later byte ranges. The app retains bounded buffering and uses yt-dlp only for resolution.
+
+Two opt-in regression checks cover longer playback without saving media. Set `MEDIABROWSER_TEST_URL` to a public video or Mix watch URL (default: Big Buck Bunny). The decode check reads through two minutes without audio output; the native check plays muted through two minutes and verifies the song does not change. With a playlist/Mix URL, the native check also prepares and commits the RAM Saver queue handoff:
+
+```powershell
+cargo test --manifest-path src-tauri/Cargo.toml live_youtube_decodes -- --ignored --nocapture
+cargo test --manifest-path src-tauri/Cargo.toml live_youtube_muted -- --ignored --nocapture
+```
 
 An opt-in Windows check resolves a public video, plays a few seconds through the custom engine at 25% volume, measures WASAPI loopback, seeks, checks pause/resume and stop, and asserts transferred audio bytes are less than the resource length:
 

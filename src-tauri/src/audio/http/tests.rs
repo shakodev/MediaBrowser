@@ -195,6 +195,30 @@ fn refreshes_expired_url_at_same_offset_and_rejects_format_change() {
         }
     }
 }
+
+#[test]
+fn persistent_forbidden_after_buffered_audio_remains_a_retryable_error() {
+    let server = Server::new(vec![9; RANGE_BYTES * 3], "ok");
+    let stats = Arc::new(TransferStats::default());
+    let mut source = open(&server, CancellationToken::new(), stats.clone()).unwrap();
+    let mut expired = server.url.clone();
+    expired.set_path("/expired");
+    source.stream.media_url = expired.clone();
+    source.resolver = Arc::new(Resolver {
+        url: expired,
+        calls: AtomicU64::new(0),
+        changed: false,
+    });
+    // Initial bytes can play even when later requests and re-resolution fail.
+    source.read_exact(&mut vec![0; RANGE_BYTES]).unwrap();
+    for _ in 0..2 {
+        let error = source.read(&mut [0; 1]).unwrap_err();
+        assert!(error.to_string().contains("HTTP 403"));
+        assert!(error.to_string().contains("update yt-dlp"));
+        assert_eq!(source.position, RANGE_BYTES as u64);
+    }
+    assert_eq!(stats.snapshot().url_refreshes, 2);
+}
 #[test]
 fn cancelling_interrupts_pending_headers_and_future_reads() {
     let server = Server::new(vec![0; RANGE_BYTES], "stall");
@@ -312,4 +336,114 @@ pub(crate) fn fast_start_fixture() -> Vec<u8> {
         }
     }
     output
+}
+
+#[test]
+#[ignore = "requires yt-dlp, Deno and public YouTube network access"]
+fn live_youtube_decodes_past_two_minutes_without_audio_output() {
+    let url = Url::parse(
+        &std::env::var("MEDIABROWSER_TEST_URL")
+            .unwrap_or_else(|_| "https://www.youtube.com/watch?v=aqz-KE-bpKQ".into()),
+    )
+    .unwrap();
+    let resolver: Arc<dyn StreamResolver> = Arc::new(crate::resolver::YtDlpResolver::default());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let stream = runtime.block_on(resolver.resolve(&url)).unwrap();
+    let extension = stream.extension.clone();
+    let token = CancellationToken::new();
+    let stats = Arc::new(TransferStats::default());
+    let source = HttpSource::open(url, stream, resolver, token.clone(), stats.clone()).unwrap();
+    let mut decoder =
+        crate::audio::decoder::AudioDecoder::from_source(Box::new(source), &extension, Some(token))
+            .unwrap();
+    let mut position = 0.0;
+    while position < 120.0 {
+        let block = decoder
+            .next_block()
+            .unwrap_or_else(|error| panic!("at {position:.3}s: {error}"))
+            .unwrap_or_else(|| panic!("early EOF at {position:.3}s"));
+        position = block.start_seconds
+            + block.samples.len() as f64 / block.channels as f64 / block.rate as f64;
+    }
+    println!(
+        "Decoded through {position:.3}s; {} ranges",
+        stats.snapshot().range_requests
+    );
+}
+
+#[test]
+#[ignore = "requires yt-dlp, Deno, public YouTube network access and an audio device"]
+fn live_youtube_muted_playback_past_two_minutes() {
+    let url = std::env::var("MEDIABROWSER_TEST_URL")
+        .unwrap_or_else(|_| "https://www.youtube.com/watch?v=aqz-KE-bpKQ".into());
+    tauri::async_runtime::block_on(async {
+        let engine = crate::audio::AudioEngine::new().unwrap();
+        engine.set_volume(0.0).await.unwrap();
+        let parsed = Url::parse(&url).unwrap();
+        let playlist_id = parsed
+            .query_pairs()
+            .find(|(key, _)| key == "list")
+            .map(|(_, value)| value.into_owned());
+        if playlist_id.is_some() {
+            let video = crate::resolver::canonical_video_url(&url).unwrap();
+            let state = crate::playback_state::BrowserPlayback {
+                url: url.clone(),
+                video_id: video
+                    .query_pairs()
+                    .find(|(key, _)| key == "v")
+                    .unwrap()
+                    .1
+                    .into_owned(),
+                playlist_id,
+                playlist_index: None,
+                position_seconds: 0.0,
+                volume: 0.0,
+                paused: false,
+            };
+            engine.prepare_handoff(state.clone()).await.unwrap();
+            engine.start_handoff(state).await.unwrap();
+            engine.commit_handoff(0.0, false).await.unwrap();
+        } else {
+            engine.load_youtube(&url).await.unwrap();
+            engine.play().await.unwrap();
+        }
+        let initial = engine.snapshot().await.unwrap();
+        let started = std::time::Instant::now();
+        let mut reported = 0;
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let snapshot = engine.snapshot().await.unwrap();
+            assert_eq!(
+                snapshot.metadata.as_ref().map(|m| &m.id),
+                initial.metadata.as_ref().map(|m| &m.id),
+                "playlist skipped the current song"
+            );
+            if let Some(queue) = &snapshot.queue {
+                assert_eq!(queue.skipped, 0);
+            }
+            assert_eq!(
+                snapshot.status,
+                crate::playback_state::PlaybackStatus::Playing,
+                "at {:.3}s: {:?}",
+                snapshot.position_seconds,
+                snapshot.error
+            );
+            let seconds = snapshot.position_seconds as u64;
+            if seconds / 15 > reported {
+                reported = seconds / 15;
+                println!("Playing at {:.3}s", snapshot.position_seconds);
+            }
+            if snapshot.position_seconds >= 120.0 {
+                break;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(180),
+                "playback stalled"
+            );
+        }
+        engine.stop().await.unwrap();
+    });
 }
