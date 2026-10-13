@@ -4,6 +4,7 @@ mod benchmark;
 mod browser;
 mod desktop;
 mod media_keys;
+mod native_player;
 pub mod playback_state;
 pub mod queue;
 pub mod resolver;

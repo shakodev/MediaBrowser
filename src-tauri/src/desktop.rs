@@ -33,7 +33,7 @@ pub(crate) struct Desktop {
     actions: tokio::sync::mpsc::Sender<Action>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum Action {
     Toggle,
     Play,
@@ -41,8 +41,15 @@ pub(crate) enum Action {
     Next,
     Previous,
     Volume(f32),
+    SetVolume(f32),
+    Seek {
+        seconds: f64,
+        path: String,
+        occurrence: Option<u64>,
+    },
     Reopen,
     Saver,
+    ShowPlayer,
     Quit,
 }
 
@@ -108,19 +115,21 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
     let down = MenuItem::with_id(app, "volume-down", "Volume −10%", true, None::<&str>)?;
     let up = MenuItem::with_id(app, "volume-up", "Volume +10%", true, None::<&str>)?;
     let reopen = MenuItem::with_id(app, "reopen", "Reopen browser", true, None::<&str>)?;
-    let saver = MenuItem::with_id(
+    let player = MenuItem::with_id(
         app,
-        "saver",
-        "RAM Saver (close all windows)",
+        "player-window",
+        "Show RAM Saver controls",
         true,
         None::<&str>,
     )?;
+    let saver = MenuItem::with_id(app, "saver", "RAM Saver", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
         &[
-            &status, &toggle, &next, &previous, &down, &up, &separator, &reopen, &saver, &quit,
+            &status, &toggle, &next, &previous, &down, &up, &separator, &player, &reopen, &saver,
+            &quit,
         ],
     )?;
     app.manage(Desktop {
@@ -153,6 +162,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
                 "volume-up" => Action::Volume(0.1),
                 "reopen" => Action::Reopen,
                 "saver" => Action::Saver,
+                "player-window" => Action::ShowPlayer,
                 "quit" => Action::Quit,
                 _ => return,
             };
@@ -160,7 +170,15 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
         })
         .on_tray_icon_event(|tray, event| {
             if matches!(event, TrayIconEvent::DoubleClick { .. }) {
-                dispatch(tray.app_handle(), Action::Reopen);
+                let app = tray.app_handle();
+                dispatch(
+                    app,
+                    if app.state::<BrowserState>().get().mode == PlaybackMode::RamSaver {
+                        Action::ShowPlayer
+                    } else {
+                        Action::Reopen
+                    },
+                );
             }
         })
         .build(app)?;
@@ -230,6 +248,7 @@ async fn restore_checkpoint(app: &AppHandle) -> Result<(), String> {
             saved.restore(&app.state::<AudioEngine>()).await?;
             browser.update(|s| s.mode = PlaybackMode::RamSaver);
             destroy_ui(app)?;
+            crate::native_player::show(app)?;
         } else if let Source::Youtube { playback } = saved.source {
             // Browser resumes at a timestamp when explicitly reopened.
             browser.observe_url(&playback.watch_url());
@@ -271,6 +290,12 @@ pub(crate) async fn perform(app: &AppHandle, action: Action) -> Result<(), Strin
     match action {
         Action::Reopen => return crate::browser::reopen(app).await,
         Action::Saver => return crate::browser::handoff::enter_ram_saver(app).await,
+        Action::ShowPlayer => {
+            if app.state::<BrowserState>().get().mode != PlaybackMode::RamSaver {
+                return Err("Switch to RAM Saver to use its controls.".into());
+            }
+            return crate::native_player::show(app);
+        }
         Action::Quit => return Ok(()),
         _ => {}
     }
@@ -295,6 +320,12 @@ pub(crate) async fn perform(app: &AppHandle, action: Action) -> Result<(), Strin
                 .set_volume((snapshot.volume + delta).clamp(0.0, 1.0))
                 .await?
         }
+        Action::SetVolume(volume) => engine.set_volume(volume).await?,
+        Action::Seek {
+            seconds,
+            path,
+            occurrence,
+        } => engine.seek_current(seconds, path, occurrence).await?,
         _ => unreachable!(),
     };
     browser.update(|s| s.error = None);
@@ -304,6 +335,7 @@ pub(crate) async fn perform(app: &AppHandle, action: Action) -> Result<(), Strin
 }
 
 fn update_controls(app: &AppHandle, snapshot: &PlaybackSnapshot) {
+    crate::native_player::update(app, snapshot);
     let state = app.state::<Desktop>();
     let active = app.state::<BrowserState>().get().mode == PlaybackMode::RamSaver
         || app.get_webview("youtube").is_none();

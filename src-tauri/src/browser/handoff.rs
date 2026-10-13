@@ -50,7 +50,8 @@ pub(crate) async fn enter_ram_saver(app: &AppHandle) -> Result<(), String> {
         .try_write()
         .map_err(|_| "A playback operation is already in progress.")?;
     if state.get().mode == PlaybackMode::RamSaver {
-        return crate::desktop::destroy_ui(app);
+        crate::desktop::destroy_ui(app)?;
+        return crate::native_player::show(app);
     }
     let switching = Switching::begin(app);
     let result = enter(app).await;
@@ -114,7 +115,8 @@ async fn enter(app: &AppHandle) -> Result<(), String> {
         );
     }
     drop(view);
-    crate::desktop::destroy_ui(app)
+    crate::desktop::destroy_ui(app)?;
+    crate::native_player::show(app)
 }
 
 async fn confirm_engine(engine: &AudioEngine, baseline: &PlaybackSnapshot) -> Result<(), String> {
@@ -195,6 +197,9 @@ pub(crate) async fn return_to_browser(app: &AppHandle) -> Result<(), String> {
     }
     let switching = Switching::begin(app);
     let result = restore(app).await;
+    if result.is_ok() {
+        crate::native_player::close(app);
+    }
     switching.finish(&result);
     result
 }
