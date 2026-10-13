@@ -305,7 +305,25 @@ impl Worker {
     }
     fn command(&mut self, operation: Operation) -> Result<PlaybackSnapshot, String> {
         self.update();
+        let operation = match operation {
+            Operation::SeekCurrent {
+                seconds,
+                path,
+                occurrence,
+            } => {
+                if self.snapshot.path.as_deref() != Some(path.as_str())
+                    || self.snapshot.queue.as_ref().and_then(|q| q.current) != occurrence
+                {
+                    return Err(
+                        "The track changed while seeking. Try again on the current track.".into(),
+                    );
+                }
+                Operation::Seek(seconds)
+            }
+            other => other,
+        };
         match operation {
+            Operation::SeekCurrent { .. } => unreachable!("normalized above"),
             Operation::Load(path) => {
                 // Validate before replacing a currently playing track.
                 let mut decoder = AudioDecoder::open(&path)?;

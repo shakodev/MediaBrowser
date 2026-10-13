@@ -21,12 +21,20 @@ pub(crate) enum Operation {
     LoadYoutube(url::Url),
     PrepareHandoff(crate::playback_state::BrowserPlayback),
     StartHandoff(crate::playback_state::BrowserPlayback, std::time::Instant),
-    CommitHandoff { volume: f32, paused: bool },
+    CommitHandoff {
+        volume: f32,
+        paused: bool,
+    },
     Queue(crate::queue::QueueAction),
     Play,
     Pause,
     Stop,
     Seek(f64),
+    SeekCurrent {
+        seconds: f64,
+        path: String,
+        occurrence: Option<u64>,
+    },
     Volume(f32),
     Snapshot,
 }
@@ -99,6 +107,7 @@ impl AudioEngine {
                     | Operation::Pause
                     | Operation::Stop
                     | Operation::Seek(_)
+                    | Operation::SeekCurrent { .. }
             );
             let cancel = if disruptive {
                 CancellationToken::new()
@@ -187,6 +196,20 @@ impl AudioEngine {
     }
     pub async fn set_volume(&self, volume: f32) -> Result<PlaybackSnapshot, String> {
         self.request(Operation::Volume(volume)).await
+    }
+    /// A delayed UI gesture must never seek a track that advanced meanwhile.
+    pub(crate) async fn seek_current(
+        &self,
+        seconds: f64,
+        path: String,
+        occurrence: Option<u64>,
+    ) -> Result<PlaybackSnapshot, String> {
+        self.request(Operation::SeekCurrent {
+            seconds,
+            path,
+            occurrence,
+        })
+        .await
     }
     pub async fn snapshot(&self) -> Result<PlaybackSnapshot, String> {
         self.request(Operation::Snapshot).await

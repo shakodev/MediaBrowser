@@ -46,6 +46,34 @@ fn pump(worker: &mut Worker, renderer: &Rc<RefCell<Option<Renderer>>>) -> Vec<f3
 }
 
 #[test]
+fn delayed_seek_does_not_move_a_different_track_or_occurrence() {
+    let (mut worker, _) = worker();
+    let loaded = worker.command(Operation::Load(fixture("m4a"))).unwrap();
+    let path = loaded.path.unwrap();
+    for (expected, occurrence) in [("old track".to_owned(), None), (path.clone(), Some(2))] {
+        assert!(worker
+            .command(Operation::SeekCurrent {
+                seconds: 0.03,
+                path: expected,
+                occurrence,
+            })
+            .unwrap_err()
+            .contains("track changed"));
+        assert_eq!(worker.snapshot.position_seconds, 0.0);
+        assert_eq!(worker.snapshot.status, Status::Paused);
+    }
+    let sought = worker
+        .command(Operation::SeekCurrent {
+            seconds: 0.03,
+            path,
+            occurrence: None,
+        })
+        .unwrap();
+    assert_eq!(sought.position_seconds, 0.03);
+    assert_eq!(sought.status, Status::Paused);
+}
+
+#[test]
 fn decodes_all_local_formats_and_seeks_forward_and_backward() {
     for extension in ["mp3", "aac", "m4a"] {
         let path = fixture(extension);
