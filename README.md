@@ -29,7 +29,7 @@ The executable is `src-tauri/target/release/media-browser.exe`. Installer packag
 - Local MP3, AAC (ADTS), and AAC-LC M4A playback through a custom Rust engine. Paste a file path into **Local playback**, load it, then use Play/Pause/Stop, volume, the position slider, or a seek time in seconds. Quoted Windows paths are accepted.
 - YouTube playlist and Mix/radio playback with automatic advancement, previous/next, track selection, shuffle, repeat off/all/one, and a paged track list with current-track metadata.
 - RAM Saver buttons in the controller and browser toolbar hand the current public video or playlist track to the Rust engine. Browser Mode restores the current audio track and position.
-- RAM Saver destroys every WebView window. A native Windows tray provides play/pause, next/previous, volume, browser reopening and clean Quit; Windows media keys use SMTC.
+- RAM Saver destroys every WebView window and opens a compact native Windows GUI with play/pause, next/previous, volume and a seekable progress bar. Closing the GUI leaves playback in the tray; double-click the tray to reopen the controls. Windows media keys use SMTC.
 - Playback checkpoints restore RAM Saver paused without starting WebView2. See [tray lifecycle, persistence, benchmark instructions and limitations](docs/ram-saver.md).
 
 ## RAM Saver handoff

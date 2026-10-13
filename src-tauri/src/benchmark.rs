@@ -53,6 +53,11 @@ async fn sample(app: &AppHandle, name: &str, native_audio: bool) -> Result<(), S
     if name.starts_with("ram-saver") && !app.webviews().is_empty() {
         return Err("RAM Saver retained a WebView".into());
     }
+    if matches!(name, "ram-saver-restart" | "ram-saver-controls")
+        && app.get_window("ram-saver").is_none()
+    {
+        return Err("RAM Saver native controls did not open".into());
+    }
     let engine = app.state::<AudioEngine>();
     let before = engine.snapshot().await?;
     let browser_before = if name.starts_with("browser") {
@@ -153,6 +158,7 @@ async fn run(app: &AppHandle) -> Result<(), String> {
     // Exercise Tauri's actual last-window path as well as its normal SMTC host
     // arrangement. Media keys were verified before intentionally removing host.
     phase(app, "last-window-check", serde_json::Value::Null)?;
+    crate::native_player::close(app);
     app.state::<crate::media_keys::MediaKeys>().close();
     app.get_window("media-session")
         .ok_or("Missing native media host")?
@@ -217,6 +223,10 @@ async fn resume(app: &AppHandle) -> Result<(), String> {
     )?;
     desktop::perform(app, desktop::Action::Play).await?;
     sample(app, "ram-saver-restart", true).await?;
+    crate::native_player::close(app);
+    sample(app, "ram-saver-tray", true).await?;
+    desktop::perform(app, desktop::Action::ShowPlayer).await?;
+    sample(app, "ram-saver-controls", true).await?;
     verify_media_session(app).await?;
     Ok(())
 }

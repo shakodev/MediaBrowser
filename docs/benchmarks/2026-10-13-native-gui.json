@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-13",
+  "guiCodeRevision": "d3c0bd4",
+  "build": "release, memory-benchmark feature, with open/closed/reopened resume phases",
+  "os": "Windows 11 build 26200",
+  "source": "Local MP3: 1400 repetitions of the 12 audio frames in tests/fixtures/sfx.mp3, retaining one Xing frame with updated frame/byte counts; 438.857 seconds; muted",
+  "metric": "Recursive process-tree private committed memory, MiB (Win32_Process.PrivatePageCount)",
+  "steadySeconds": 15,
+  "settlingSeconds": 8,
+  "summary": [
+    { "phase": "ram-saver-restart", "samples": 22, "medianPrivateMiB": 6.035, "minPrivateMiB": 6.012, "maxPrivateMiB": 6.055, "maxProcesses": 1, "webviews": [], "windows": ["media-session", "ram-saver"] },
+    { "phase": "ram-saver-tray", "samples": 22, "medianPrivateMiB": 6.035, "minPrivateMiB": 6.035, "maxPrivateMiB": 6.035, "maxProcesses": 1, "webviews": [], "windows": ["media-session"] },
+    { "phase": "ram-saver-controls", "samples": 23, "medianPrivateMiB": 6.004, "minPrivateMiB": 6.004, "maxPrivateMiB": 6.102, "maxProcesses": 1, "webviews": [], "windows": ["media-session", "ram-saver"] }
+  ],
+  "checks": {
+    "restoredPaused": true,
+    "nativeAudioProgressedEveryPhase": true,
+    "windowsMediaSessionPausePlay": true,
+    "completed": true,
+    "exited": true,
+    "remainingDescendants": []
+  },
+  "interactiveChecks": ["Pause/Play button", "Space to toggle", "Tab navigation", "volume Right/Home with checkpoint verification", "mouse and keyboard seek", "seek while paused", "close to tray", "recreate native controls"],
+  "limitations": [
+    "Short local-file run; not a YouTube memory benchmark or long-duration leak test.",
+    "Closing the GUI does not unload all first-use DLL/allocator costs; differences at this scale are measurement noise.",
+    "Live public YouTube resolution failed before handoff, so network handoff and playlist GUI interaction were not reverified.",
+    "Earlier interactive runs are excluded from these unattended memory samples."
+  ]
+}
