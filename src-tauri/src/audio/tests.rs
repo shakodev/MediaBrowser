@@ -385,6 +385,29 @@ fn youtube_transport_uses_remote_source_and_preserves_seek_and_pause() {
 }
 
 #[test]
+fn conditional_seek_does_not_cancel_playback_before_identity_is_checked() {
+    tauri::async_runtime::block_on(async {
+        let (sender, receiver) = mpsc::sync_channel::<Request>(1);
+        let engine = super::super::AudioEngine {
+            sender,
+            control: Arc::default(),
+        };
+        let token = engine.control.cancel.lock().unwrap().clone();
+        let worker = std::thread::spawn(move || {
+            let request = receiver.recv().unwrap();
+            assert!(matches!(request.operation, Operation::SeekCurrent { .. }));
+            assert!(!token.is_cancelled());
+            request.reply.send(Err("track changed".into())).unwrap();
+        });
+        assert!(engine
+            .seek_current(10.0, "previous track".into(), None)
+            .await
+            .is_err());
+        worker.join().unwrap();
+    });
+}
+
+#[test]
 fn stop_cancels_accepted_work_and_queue_backpressure_does_not_cancel_it() {
     tauri::async_runtime::block_on(async {
         let (sender, receiver) = mpsc::sync_channel::<Request>(1);

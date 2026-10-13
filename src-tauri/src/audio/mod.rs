@@ -107,8 +107,9 @@ impl AudioEngine {
                     | Operation::Pause
                     | Operation::Stop
                     | Operation::Seek(_)
-                    | Operation::SeekCurrent { .. }
             );
+            // Conditional GUI seeks retain the token until the worker checks
+            // track identity, so a rejected stale gesture cannot stop new audio.
             let cancel = if disruptive {
                 CancellationToken::new()
             } else {
